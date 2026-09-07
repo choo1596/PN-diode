@@ -255,6 +255,7 @@ body.single #plots{grid-template-columns:1fr}
               <button data-mode="log">전체 (log)</button>
               <button data-mode="exc">과잉 캐리어만 (linear)</button>
             </span>
+            <button class="tg logOnly" data-bind="pzoom">접합 근처 확대</button>
             <button class="tg excOnly" data-bind="yfix">y 고정</button>
             <button class="tg excOnly" data-bind="pnorm">각 곡선 정규화</button>
           </div>
@@ -796,6 +797,34 @@ function fmtG(x, s) {                       /* significant digits, plain */
   var d = Math.max(0, s - 1 - (a === 0 ? 0 : Math.floor(Math.log10(a))));
   return (x < 0 ? '−' : '') + a.toFixed(Math.min(d, 6));
 }
+function expParts(x, d) {
+  var sg = x < 0 ? '−' : '';
+  var a = Math.abs(x), ex = Math.floor(Math.log10(a)), m = a / Math.pow(10, ex);
+  if (m >= 10 - 0.5 * Math.pow(10, -d)) { m /= 10; ex++; }
+  return [sg + m.toFixed(d), ex];
+}
+/* canvas variants: '^{k}' is understood by drawSub, HTML <sup> is not */
+function fmtEc(x, d) {
+  if (x === 0) return '0';
+  if (!isFinite(x)) return '—';
+  var p = expParts(x, d === undefined ? 2 : d);
+  return p[0] + '×10^{' + String(p[1]).replace('-', '−') + '}';
+}
+function fmtGc(x, s) {
+  if (!isFinite(x)) return '—';
+  s = s || 3;
+  var a = Math.abs(x);
+  if (a !== 0 && (a >= 1e5 || a < 1e-3)) return fmtEc(x, s - 1);
+  var d = Math.max(0, s - 1 - (a === 0 ? 0 : Math.floor(Math.log10(a))));
+  return (x < 0 ? '−' : '') + a.toFixed(Math.min(d, 6));
+}
+function fmtLenC(cm) {
+  var um = cm * 1e4;
+  if (!isFinite(um)) return '—';
+  if (Math.abs(um) < 0.1) return fmtGc(um * 1000) + ' nm';
+  if (Math.abs(um) < 1000) return fmtGc(um) + ' µm';
+  return fmtGc(um / 1000) + ' mm';
+}
 function fmtR(r) {                          /* injection ratio */
   if (r === 0) return '0';
   var a = Math.abs(r);
@@ -825,7 +854,7 @@ var DEF = {
   ovrTau: false, tau_n: 10, tau_p: 300,
   ovrD: false, Dn: 8.8, Dp: 9.4,
   ovrL: false, Ln: 3, Lp: 17,
-  pmode: 'log', pnorm: false, yfix: false,
+  pmode: 'log', pnorm: true, yfix: false, pzoom: false,
   ivy: 'log', ivdecomp: false, ivslope: true
 };
 var S = {};
@@ -837,9 +866,9 @@ var PRESETS = {
              ovrTau: true, tau_n: 10, tau_p: 300, ovrD: false, ovrL: false,
              pmode: 'log', ivy: 'log' },
   long:    { Na: 5e17, Nd: 2e16, Wp: 500, Wn: 500, T: 300, Va: 0.5, rs: true,
-             ovrTau: false, ovrD: false, ovrL: false, pmode: 'exc', pnorm: false, yfix: false },
+             ovrTau: false, ovrD: false, ovrL: false, pmode: 'exc', pnorm: true, yfix: false },
   short:   { Na: 5e17, Nd: 2e16, Wp: 1, Wn: 1, T: 300, Va: 0.5, rs: true,
-             ovrTau: false, ovrD: false, ovrL: false, pmode: 'exc', pnorm: false, yfix: false },
+             ovrTau: false, ovrD: false, ovrL: false, pmode: 'exc', pnorm: true, yfix: false },
   high:    { Na: 1e17, Nd: 1e15, Wp: 300, Wn: 300, T: 300, Va: 0.6, rs: true, gen: false,
              ovrTau: false, ovrD: false, ovrL: false, pmode: 'log', ivy: 'log', ivslope: true }
 };
@@ -856,7 +885,7 @@ function applyPreset(name) {
 var URLKEYS = { Na: 'na', Nd: 'nd', Va: 'va', Wp: 'wp', Wn: 'wn', T: 't',
   rs: 'rs', gen: 'gen', ovrTau: 'ot', tau_n: 'tn', tau_p: 'tp',
   ovrD: 'od', Dn: 'dn', Dp: 'dp', ovrL: 'ol', Ln: 'ln', Lp: 'lp',
-  pmode: 'pm', pnorm: 'pnm', yfix: 'yf', ivy: 'ivy', ivdecomp: 'dec', ivslope: 'slp' };
+  pmode: 'pm', pnorm: 'pnm', yfix: 'yf', pzoom: 'pz', ivy: 'ivy', ivdecomp: 'dec', ivslope: 'slp' };
 var EMBED = false, ONLY = '';
 
 function readURL() {
@@ -1016,6 +1045,12 @@ function syncControls() {
   Array.prototype.forEach.call(document.querySelectorAll('.excOnly'), function (e) {
     e.style.display = (S.pmode === 'exc') ? '' : 'none';
   });
+  Array.prototype.forEach.call(document.querySelectorAll('[data-bind="yfix"]'), function (e) {
+    if (S.pmode === 'exc' && S.pnorm) e.style.display = 'none';
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('.logOnly'), function (e) {
+    e.style.display = (S.pmode === 'log') ? '' : 'none';
+  });
   ['tau_n', 'tau_p'].forEach(function (k) { SL[k].input.parentNode.parentNode.style.opacity = S.ovrTau ? 1 : .45; });
   ['Dn', 'Dp'].forEach(function (k) { SL[k].input.parentNode.parentNode.style.opacity = S.ovrD ? 1 : .45; });
   ['Ln', 'Lp'].forEach(function (k) { SL[k].input.parentNode.parentNode.style.opacity = S.ovrL ? 1 : .45; });
@@ -1170,7 +1205,9 @@ function fitCanvas(cv) {
 /* value <-> pixel mapping */
 function Ax(log, lo, hi, p0, p1) {
   var a = log ? Math.log10(lo) : lo, b = log ? Math.log10(hi) : hi;
-  if (!(b > a)) b = a + 1;
+  /* a descending range (hi < lo) is legal - the excess-carrier plot mirrors
+     the p side - so only guard against a degenerate one */
+  if (!isFinite(a) || !isFinite(b) || a === b) { a = a || 0; b = a + 1; }
   return {
     log: log, lo: lo, hi: hi, a: a, b: b, p0: p0, p1: p1,
     t: function (v) {
@@ -1219,6 +1256,62 @@ function fmtTick(v, step) {
   var d = Math.max(0, -Math.floor(Math.log10(Math.abs(step))));
   if (Math.abs(v) >= 1e5 || Math.abs(v) < 1e-4) return v.toExponential(0).replace('-', '−');
   return v.toFixed(Math.min(d, 4)).replace('-', '−');
+}
+
+
+/* --------------------------------------------------------------------------
+   tiny subscript typesetter for canvas text.  "N_a", "n_p(0)", "d_{pn}(0)"
+   are drawn with a real lowered, smaller run - Unicode has no subscript "d",
+   so drawing it is the only way to typeset N_d correctly.
+   -------------------------------------------------------------------------- */
+function tokSub(str) {                 /* kind 0 = base, 1 = sub, 2 = sup */
+  var out = [], i = 0, cur = '';
+  while (i < str.length) {
+    if (str[i] === '_' || str[i] === '^') {
+      var kind = str[i] === '_' ? 1 : 2;
+      if (cur) { out.push([cur, 0]); cur = ''; }
+      i++;
+      if (str[i] === '{') { var j = str.indexOf('}', i); out.push([str.slice(i + 1, j), kind]); i = j + 1; }
+      else { out.push([str[i], kind]); i++; }
+    } else { cur += str[i]; i++; }
+  }
+  if (cur) out.push([cur, 0]);
+  return out;
+}
+function subFonts(size, bold) {
+  var big = (bold ? 'bold ' : '') + size + 'px Arial, Helvetica, sans-serif';
+  var sml = (bold ? 'bold ' : '') + Math.round(size * 0.76) + 'px Arial, Helvetica, sans-serif';
+  return [big, sml, sml];
+}
+var SUB_DY = [0, 0.22, -0.42];
+function measSub(ctx, str, size, bold) {
+  var t = tokSub(str), fo = subFonts(size, bold), wsum = 0, i;
+  var keep = ctx.font;
+  for (i = 0; i < t.length; i++) { ctx.font = fo[t[i][1]]; wsum += ctx.measureText(t[i][0]).width; }
+  ctx.font = keep;
+  return wsum;
+}
+/* align: 'left' | 'right' | 'center'.  halo=true paints a white backing box. */
+function drawSub(ctx, str, x, y, o) {
+  o = o || {};
+  var size = o.size || FS, bold = o.bold, t = tokSub(str), fo = subFonts(size, bold);
+  var wsum = measSub(ctx, str, size, bold);
+  var x0 = o.align === 'right' ? x - wsum : o.align === 'center' ? x - wsum / 2 : x;
+  var keepA = ctx.textAlign, keepF = ctx.font;
+  ctx.textAlign = 'left';
+  if (o.halo) {
+    ctx.fillStyle = 'rgba(255,255,255,' + (o.halo === true ? 0.86 : o.halo) + ')';
+    ctx.fillRect(x0 - 3, y - size - 1, wsum + 6, size + 8);
+  }
+  ctx.fillStyle = o.col || COL.text;
+  var cx = x0, i;
+  for (i = 0; i < t.length; i++) {
+    ctx.font = fo[t[i][1]];
+    ctx.fillText(t[i][0], cx, y + size * SUB_DY[t[i][1]]);
+    cx += ctx.measureText(t[i][0]).width;
+  }
+  ctx.textAlign = keepA; ctx.font = keepF;
+  return wsum;
 }
 
 /* frame + ticks + titles.  box = {l,r,t,b} in css pixels */
@@ -1284,10 +1377,11 @@ function drawFrame(ctx, box, xa, ya, o) {
   /* titles */
   ctx.fillStyle = COL.text;
   ctx.font = 'bold ' + (FS + 1) + 'px Arial, Helvetica, sans-serif';
-  if (o.xlabel) { ctx.textAlign = 'center'; ctx.fillText(o.xlabel, (box.l + box.r) / 2, box.b + 7 + FS * 2.2); }
+  if (o.xlabel) drawSub(ctx, o.xlabel, (box.l + box.r) / 2, box.b + 7 + FS * 2.2,
+                        { align: 'center', size: FS + 1, bold: 1 });
   if (o.ylabel) {
     ctx.save(); ctx.translate(14, (box.t + box.b) / 2); ctx.rotate(-Math.PI / 2);
-    ctx.textAlign = 'center'; ctx.fillText(o.ylabel, 0, 0); ctx.restore();
+    drawSub(ctx, o.ylabel, 0, 0, { align: 'center', size: FS + 1, bold: 1 }); ctx.restore();
   }
   ctx.restore();
 }
@@ -1333,7 +1427,7 @@ function legend(ctx, x, y, items) {
   ctx.save();
   ctx.font = (FS - 1) + 'px Arial, Helvetica, sans-serif';
   var wmax = 0, i;
-  for (i = 0; i < items.length; i++) wmax = Math.max(wmax, ctx.measureText(items[i].t).width);
+  for (i = 0; i < items.length; i++) wmax = Math.max(wmax, measSub(ctx, items[i].t, FS - 1));
   var w = wmax + 44, h = items.length * (FS + 6) + 8;
   ctx.fillStyle = 'rgba(255,255,255,.86)'; ctx.strokeStyle = '#d6dde6'; ctx.lineWidth = 1;
   ctx.fillRect(x, y, w, h); ctx.strokeRect(x + .5, y + .5, w, h);
@@ -1343,8 +1437,7 @@ function legend(ctx, x, y, items) {
     ctx.setLineDash(items[i].d || []);
     ctx.beginPath(); ctx.moveTo(x + 8, yy); ctx.lineTo(x + 34, yy); ctx.stroke();
     ctx.setLineDash([]);
-    ctx.fillStyle = COL.text; ctx.textAlign = 'left';
-    ctx.fillText(items[i].t, x + 40, yy + FS * 0.35);
+    drawSub(ctx, items[i].t, x + 40, yy + FS * 0.35, { size: FS - 1, col: COL.text });
   }
   ctx.restore();
   return h;
@@ -1424,7 +1517,7 @@ function drawIV() {
   }
 
   drawFrame(ctx, box, xa, ya, {
-    xlabel: '인가전압  Va  [V]',
+    xlabel: '인가전압  V_a  [V]',
     ylabel: isLog ? '|J|  [A/cm²]' : 'J  [A/cm²]', xn: 7, yn: 7
   });
 
@@ -1553,8 +1646,8 @@ function drawIV() {
   if (v1 !== null) items.push({ c: COL.tot, t: 'J · 고준위 주입 (r ≥ 1)', d: INJ_STYLE[2] });
   if (isLog) items.push({ c: COL.rev, t: '역방향 |J| (J < 0)' });
   if (S.ivdecomp) {
-    items.push({ c: COL.elec, w: 2.5, t: 'Jn · p측 전자 주입' });
-    items.push({ c: COL.hole, w: 2.5, t: 'Jp · n측 정공 주입' });
+    items.push({ c: COL.elec, w: 2.5, t: 'J_n · p측 전자 주입' });
+    items.push({ c: COL.hole, w: 2.5, t: 'J_p · n측 정공 주입' });
   }
   if (isLog && S.ivslope) items.push({ c: COL.guide, w: 1.8, d: [7, 5], t: 'n = 1 / n = 2 기울기' });
   legend(ctx, box.l + 10, box.t + 8, items);
@@ -1589,6 +1682,272 @@ function drawAll() {
     try { drawIV(); } catch (e) { console.error(e); }
   });
 }
+
+/* ==========================================================================
+   PLOT 1  -  carrier concentration profile
+     mode A "log"  : full picture, both carriers, log axis   (slide 1)
+     mode B "exc"  : excess minority carriers only, linear   (slide 2)
+   ========================================================================== */
+function haloText(ctx, txt, x, y, col, align, size, bold) {
+  drawSub(ctx, txt, x, y, { align: align, size: size || FS, bold: bold, col: col, halo: true });
+}
+function arrow(ctx, x, y0, y1, col) {
+  if (Math.abs(y1 - y0) < 3) return;
+  ctx.save();
+  ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.setLineDash([]);
+  ctx.beginPath(); ctx.moveTo(x, y0); ctx.lineTo(x, y1); ctx.stroke();
+  var d = y1 < y0 ? -1 : 1;
+  ctx.beginPath();
+  ctx.moveTo(x, y1); ctx.lineTo(x - 5.5, y1 - d * 8); ctx.lineTo(x + 5.5, y1 - d * 8);
+  ctx.closePath(); ctx.fillStyle = col; ctx.fill();
+  ctx.restore();
+}
+/* sample points: uniform over the base plus a fine grid near the SCR edge */
+function sampleX(W, L, n) {
+  var xs = [], i, near = Math.min(W, 6 * L);
+  for (i = 0; i <= n; i++) xs.push(W * i / n);
+  if (near < W) for (i = 0; i <= n; i++) xs.push(near * i / n);
+  xs.sort(function (a, b) { return a - b; });
+  return xs;
+}
+
+function drawProfile() {
+  var cv = $('cvProfile');
+  if (ONLY === 'iv') return;
+  var f = fitCanvas(cv), ctx = f.ctx, w = f.w, h = f.h;
+  if (!MODEL) return;
+  if (S.pmode === 'exc') drawProfileExcess(ctx, w, h);
+  else drawProfileLog(ctx, w, h);
+}
+
+/* ---------------- mode A : everything, log scale ---------------- */
+function drawProfileLog(ctx, w, h) {
+  var m = MODEL, b = m.base, U = 1e4;                 /* cm -> um */
+  var xpU = m.xp * U, xnU = m.xn * U;
+  var xLo = -(S.Wp + xpU), xHi = xnU + S.Wn;
+  if (S.pzoom) {                       /* zoom to a few diffusion lengths */
+    xLo = -(xpU + Math.min(S.Wp, 5 * b.Ln * U));
+    xHi = xnU + Math.min(S.Wn, 5 * b.Lp * U);
+  }
+  var box = { l: 82, r: w - 16, t: 14, b: h - 50 };
+  if (box.r - box.l < 60 || box.b - box.t < 60) return;
+
+  var ymax = Math.max(b.Na, b.Nd, m.ppE, m.nnE) * 3;
+  var ymin = Math.min(b.np0, b.pn0) / 100;
+  if (ymax / ymin > 1e24) ymin = ymax / 1e24;
+  ymax = Math.pow(10, Math.ceil(Math.log10(ymax)));
+  ymin = Math.pow(10, Math.floor(Math.log10(ymin)));
+  var xa = Ax(false, xLo, xHi, box.l, box.r), ya = Ax(true, ymin, ymax, box.b, box.t);
+
+  /* space charge region */
+  var pxL = xa.t(-xpU), pxR = xa.t(xnU), exaggerated = false;
+  if (pxR - pxL < 6) { var c = (pxL + pxR) / 2; pxL = c - 3; pxR = c + 3; exaggerated = true; }
+  ctx.fillStyle = COL.scr; ctx.fillRect(pxL, box.t, pxR - pxL, box.b - box.t);
+
+  drawFrame(ctx, box, xa, ya, {
+    xlabel: '위치 x [µm]   (0 = 야금학적 접합)',
+    ylabel: '캐리어 농도 [cm⁻³]', xn: 6
+  });
+
+  /* ---- curves ---- */
+  var xsP = sampleX(S.Wp * UM, b.Ln, 260), xsN = sampleX(S.Wn * UM, b.Lp, 260);
+  var npC = [], ppC = [], pnC = [], nnC = [], i, xx, d;
+  for (i = 0; i < xsP.length; i++) {                  /* p side, x'' from edge */
+    xx = xsP[i]; d = PHY.excessP(m, xx);
+    var xu = -(xpU + xx * U);
+    npC.push([xu, b.np0 + d]); ppC.push([xu, b.Na + d]);
+  }
+  for (i = 0; i < xsN.length; i++) {                  /* n side, x' from edge  */
+    xx = xsN[i]; d = PHY.excessN(m, xx);
+    var xu2 = xnU + xx * U;
+    pnC.push([xu2, b.pn0 + d]); nnC.push([xu2, b.Nd + d]);
+  }
+
+  /* equilibrium references */
+  poly(ctx, box, xa, ya, [[xLo, b.np0], [-xpU, b.np0]], { c: COL.elec, w: 1.6, d: [3, 5] });
+  poly(ctx, box, xa, ya, [[xnU, b.pn0], [xHi, b.pn0]], { c: COL.hole, w: 1.6, d: [3, 5] });
+
+  /* dotted continuation through the SCR (no model inside) */
+  poly(ctx, box, xa, ya, [[-xpU, m.npE], [xnU, m.nnE]], { c: COL.elec, w: 2, d: [2, 4] });
+  poly(ctx, box, xa, ya, [[-xpU, m.ppE], [xnU, m.pnE]], { c: COL.hole, w: 2, d: [2, 4] });
+
+  poly(ctx, box, xa, ya, ppC, { c: COL.hole });       /* majority holes  (p) */
+  poly(ctx, box, xa, ya, nnC, { c: COL.elec });       /* majority elec.  (n) */
+  poly(ctx, box, xa, ya, npC, { c: COL.elec });       /* minority elec.  (p) */
+  poly(ctx, box, xa, ya, pnC, { c: COL.hole });       /* minority holes  (n) */
+
+  /* ---- injection markers + arrows at both SCR edges ---- */
+  ctx.save();
+  ctx.beginPath(); ctx.rect(box.l, box.t, box.r - box.l, box.b - box.t); ctx.clip();
+  var clampY = function (v) { return Math.max(box.t + 3, Math.min(box.b - 3, ya.t(Math.max(v, ymin * 1.02)))); };
+  var yE0 = ya.t(b.np0), yE1 = clampY(m.npE);
+  var yH0 = ya.t(b.pn0), yH1 = clampY(m.pnE);
+  arrow(ctx, pxL, yE0, yE1, COL.elec); dot(ctx, pxL, yE1, 7.5, COL.elec);
+  arrow(ctx, pxR, yH0, yH1, COL.hole); dot(ctx, pxR, yH1, 7.5, COL.hole);
+  haloText(ctx, 'n_p(0) = ' + fmtGc(m.npE, 3), pxL - 10, yE1 - 12, COL.elec, 'right', FS - 1, true);
+  haloText(ctx, 'p_n(0) = ' + fmtGc(m.pnE, 3), pxR + 10, yH1 - 12, COL.hole, 'left', FS - 1, true);
+  ctx.restore();
+
+  /* ---- inline labels ---- */
+  ctx.save();
+  ctx.beginPath(); ctx.rect(box.l, box.t, box.r - box.l, box.b - box.t); ctx.clip();
+  haloText(ctx, 'p_p ≈ N_a', xa.t(xLo * 0.82), ya.t(b.Na) - 8, COL.hole, 'left', FS, true);
+  haloText(ctx, 'n_n ≈ N_d', xa.t(xHi * 0.82), ya.t(b.Nd) - 8, COL.elec, 'right', FS, true);
+  haloText(ctx, 'n_{p0}', box.l + 6, ya.t(b.np0) + FS + 3, COL.elec, 'left', FS - 1);
+  haloText(ctx, 'p_{n0}', box.r - 6, ya.t(b.pn0) + FS + 3, COL.hole, 'right', FS - 1);
+  if (Math.abs(m.dnp0) > 0.15 * b.np0) {
+    var dl = Math.min(S.Wp * UM * 0.75, 2.5 * b.Ln);
+    haloText(ctx, 'n_p(x)', xa.t(-(xpU + dl * U)) - 6, ya.t(b.np0 + PHY.excessP(m, dl)) - 8,
+             COL.elec, 'right', FS - 1, true);
+  }
+  if (Math.abs(m.dpn0) > 0.15 * b.pn0) {
+    var dr = Math.min(S.Wn * UM * 0.75, 2.5 * b.Lp);
+    haloText(ctx, 'p_n(x)', xa.t(xnU + dr * U) + 6, ya.t(b.pn0 + PHY.excessN(m, dr)) - 8,
+             COL.hole, 'left', FS - 1, true);
+  }
+  ctx.restore();
+
+  /* ---- region + SCR annotation ---- */
+  ctx.fillStyle = '#5c6a7c';
+  ctx.font = 'bold ' + FS + 'px Arial, Helvetica, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('p 영역', (box.l + pxL) / 2, box.t + FS + 2);
+  ctx.fillText('n 영역', (pxR + box.r) / 2, box.t + FS + 2);
+  ctx.save();
+  ctx.translate((pxL + pxR) / 2, box.b - 8); ctx.rotate(-Math.PI / 2);
+  ctx.font = 'bold ' + (FS - 2) + 'px Arial, Helvetica, sans-serif';
+  ctx.fillStyle = '#55627a'; ctx.textAlign = 'left';
+  ctx.fillText('SCR  W = ' + fmtLenC(m.W) + (exaggerated ? '  (폭 과장 표시)' : ''), 0, 4);
+  ctx.restore();
+}
+
+/* ---------------- mode B : excess carriers only, linear ---------------- */
+var yFix = null;
+function drawProfileExcess(ctx, w, h) {
+  var m = MODEL, b = m.base, U = 1e4;
+  var box = { l: 100, r: w - 16, t: 16, b: h - 50 };
+  if (box.r - box.l < 60 || box.b - box.t < 60) return;
+
+  /* per-side view length: show the whole base, or 5 diffusion lengths */
+  var Vp = Math.min(S.Wp, 5 * b.Ln * U), Vn = Math.min(S.Wn, 5 * b.Lp * U);
+  var split = (Vp / Vn > 4 || Vn / Vp > 4);
+  if (!split) Vp = Vn = Math.max(Vp, Vn);
+
+  var gap = 5;                                   /* half width of the SCR gap */
+  var cx = (box.l + box.r) / 2;
+  var xaP = Ax(false, Vp, 0, box.l, cx - gap);   /* p side: x'' grows leftward */
+  var xaN = Ax(false, 0, Vn, cx + gap, box.r);
+
+  /* y range */
+  var A = m.dnp0, B = m.dpn0, ylo, yhi;
+  if (S.pnorm) { ylo = Math.min(0, -1.08); yhi = 1.08; if (A >= 0 && B >= 0) ylo = 0; }
+  else {
+    var mx = Math.max(A, B, 0), mn = Math.min(A, B, 0);
+    yhi = mx > 0 ? mx * 1.08 : Math.abs(mn) * 0.08;
+    ylo = mn < 0 ? mn * 1.08 : -(yhi * 0.04);
+  }
+  if (S.yfix && yFix) { ylo = yFix[0]; yhi = yFix[1]; } else yFix = [ylo, yhi];
+  var ya = Ax(false, ylo, yhi, box.b, box.t);
+
+  /* frame: drawn once per half so that each side keeps its own x ticks */
+  var i, t, v, px;
+  ctx.fillStyle = COL.scr;
+  ctx.fillRect(cx - gap, box.t, 2 * gap, box.b - box.t);
+  var halfFrame = function (xa, view, skipZero) {
+    var ticks = linTicks(0, view, 4);
+    ctx.strokeStyle = COL.grid; ctx.lineWidth = 1; ctx.beginPath();
+    for (i = 0; i < ticks.length; i++) {
+      px = Math.round(xa.t(ticks[i])) + .5;
+      if (px > box.l && px < box.r) { ctx.moveTo(px, box.t); ctx.lineTo(px, box.b); }
+    }
+    ctx.stroke();
+    ctx.strokeStyle = COL.axis; ctx.lineWidth = 1.6; ctx.fillStyle = COL.text;
+    ctx.font = FS + 'px Arial, Helvetica, sans-serif'; ctx.textAlign = 'center';
+    ctx.beginPath();
+    for (i = 0; i < ticks.length; i++) {
+      px = Math.round(xa.t(ticks[i])) + .5;
+      if (px < box.l - 1 || px > box.r + 1) continue;
+      ctx.moveTo(px, box.b); ctx.lineTo(px, box.b + 7);
+      if (skipZero && ticks[i] === 0) continue;      /* the n side prints it */
+      ctx.fillText(fmtTick(ticks[i], ticks.length > 1 ? ticks[1] - ticks[0] : 1), px, box.b + 7 + FS);
+    }
+    ctx.stroke();
+  };
+  /* horizontal grid + y axis */
+  var yt = linTicks(ylo, yhi, 6);
+  ctx.strokeStyle = COL.grid; ctx.lineWidth = 1; ctx.beginPath();
+  for (i = 0; i < yt.length; i++) {
+    var py = Math.round(ya.t(yt[i])) + .5;
+    if (py > box.t && py < box.b) { ctx.moveTo(box.l, py); ctx.lineTo(box.r, py); }
+  }
+  ctx.stroke();
+  halfFrame(xaP, Vp, true); halfFrame(xaN, Vn);
+  ctx.strokeStyle = COL.axis; ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  ctx.moveTo(box.l + .5, box.t); ctx.lineTo(box.l + .5, box.b + .5); ctx.lineTo(box.r, box.b + .5);
+  ctx.stroke();
+  ctx.fillStyle = COL.text; ctx.font = FS + 'px Arial, Helvetica, sans-serif';
+  ctx.textAlign = 'right'; ctx.lineWidth = 1.6; ctx.beginPath();
+  var ystep = yt.length > 1 ? yt[1] - yt[0] : 1;
+  for (i = 0; i < yt.length; i++) {
+    var py2 = Math.round(ya.t(yt[i])) + .5;
+    if (py2 < box.t - 1 || py2 > box.b + 1) continue;
+    ctx.moveTo(box.l, py2); ctx.lineTo(box.l + 7, py2);
+    drawSub(ctx, S.pnorm ? fmtTick(yt[i], ystep) : fmtGc(yt[i], 2),
+            box.l - 6, py2 + FS * 0.36, { align: 'right', size: FS, col: COL.text });
+    ctx.textAlign = 'right';
+  }
+  ctx.stroke();
+  drawSub(ctx, 'SCR 경계로부터의 거리 [µm]' + (split ? '   ← 좌우 축척 다름 →' : ''),
+          (box.l + box.r) / 2, box.b + 7 + FS * 2.2, { align: 'center', size: FS + 1, bold: 1 });
+  ctx.save(); ctx.translate(15, (box.t + box.b) / 2); ctx.rotate(-Math.PI / 2);
+  drawSub(ctx, S.pnorm ? '과잉 캐리어  δ / δ(0)' : '과잉 캐리어 농도 [cm⁻³]', 0, 0,
+          { align: 'center', size: FS + 1, bold: 1 });
+  ctx.restore();
+
+  /* ---- the two excess profiles ---- */
+  var kP = S.pnorm ? (A !== 0 ? 1 / Math.abs(A) * (A < 0 ? -1 : 1) : 0) : 1;
+  var kN = S.pnorm ? (B !== 0 ? 1 / Math.abs(B) * (B < 0 ? -1 : 1) : 0) : 1;
+  var xsP = sampleX(Math.min(S.Wp, Vp) * UM, b.Ln, 300);
+  var xsN = sampleX(Math.min(S.Wn, Vn) * UM, b.Lp, 300);
+  var cP = [], cN = [];
+  for (i = 0; i < xsP.length; i++) cP.push([xsP[i] * U, PHY.excessP(m, xsP[i]) * kP]);
+  for (i = 0; i < xsN.length; i++) cN.push([xsN[i] * U, PHY.excessN(m, xsN[i]) * kN]);
+  poly(ctx, box, xaP, ya, cP, { c: COL.elec, w: LW + 0.4 });
+  poly(ctx, box, xaN, ya, cN, { c: COL.hole, w: LW + 0.4 });
+
+  /* zero line */
+  ctx.strokeStyle = '#aab4c0'; ctx.lineWidth = 1.4;
+  ctx.beginPath(); ctx.moveTo(box.l, Math.round(ya.t(0)) + .5);
+  ctx.lineTo(box.r, Math.round(ya.t(0)) + .5); ctx.stroke();
+
+  /* ---- L and W markers ---- */
+  var vmark = function (xa, val, lim, txt, col, dash, row) {
+    if (!(val > 0) || val > lim * 1.001) return;
+    var px = Math.round(xa.t(val)) + .5;
+    ctx.save();
+    ctx.strokeStyle = col; ctx.lineWidth = 1.8; ctx.setLineDash(dash);
+    ctx.beginPath(); ctx.moveTo(px, box.t + 2); ctx.lineTo(px, box.b); ctx.stroke();
+    ctx.restore();
+    var tw = measSub(ctx, txt, FS - 1, 1);
+    var lx = Math.min(box.r - tw / 2 - 3, Math.max(box.l + tw / 2 + 3, px));
+    haloText(ctx, txt, lx, box.t + FS * (row === 2 ? 4.0 : 2.6), col, 'center', FS - 1, true);
+  };
+  vmark(xaP, b.Ln * U, Vp, 'L_n = ' + fmtLenC(b.Ln), COL.elec, [6, 4]);
+  vmark(xaN, b.Lp * U, Vn, 'L_p = ' + fmtLenC(b.Lp), COL.hole, [6, 4]);
+  vmark(xaP, S.Wp, Vp, 'W_p = ' + fmtGc(S.Wp) + ' µm', '#4a5666', [2, 3], 2);
+  vmark(xaN, S.Wn, Vn, 'W_n = ' + fmtGc(S.Wn) + ' µm', '#4a5666', [2, 3], 2);
+
+  /* ---- side annotations ---- */
+  ctx.textAlign = 'center';
+  haloText(ctx, 'p 영역:  δn_p(x″)   ' + (b.uP > 5 ? 'long base' : b.uP < 0.2 ? 'short base' : 'intermediate'),
+           (box.l + cx) / 2, box.b - 14, COL.elec, 'center', FS, true);
+  haloText(ctx, 'n 영역:  δp_n(x′)   ' + (b.uN > 5 ? 'long base' : b.uN < 0.2 ? 'short base' : 'intermediate'),
+           (cx + box.r) / 2, box.b - 14, COL.hole, 'center', FS, true);
+  haloText(ctx, 'δn_p(0) = ' + fmtE0(A), box.l + 8, box.t + FS + 4, COL.elec, 'left', FS - 1, true);
+  haloText(ctx, 'δp_n(0) = ' + fmtE0(B), box.r - 8, box.t + FS + 4, COL.hole, 'right', FS - 1, true);
+}
+function fmtE0(v) { return (v === 0 ? '0' : fmtGc(v, 3)) + ' cm⁻³'; }
 
 /* ==========================================================================
    BOOT
