@@ -76,7 +76,7 @@ canvas{display:block;width:100%;height:100%}
 .plotbadge{
   position:absolute;left:8px;top:8px;max-width:70%;
   background:rgba(255,226,226,.94);border:1px solid #d98b8b;color:#8c1616;
-  font-size:14px;font-weight:bold;padding:5px 9px;border-radius:5px;pointer-events:none;
+  font-size:13.5px;font-weight:bold;padding:4px 8px;border-radius:5px;pointer-events:none;
 }
 .j0line{
   flex:0 0 auto;padding:7px 10px;border-top:1px solid #e2e7ee;background:#f7f9fc;
@@ -181,14 +181,16 @@ body.embed #hdr h1,body.embed #hdr .sub{display:none}
 body.embed #presets{margin-left:0}
 body.single #plots{grid-template-columns:1fr}
 
-/* ---------- narrow: fold into one column, allow page scroll ---------- */
-@media (max-width:900px){
+/* ---------- narrow: fold into one column, plots first ---------- */
+@media (max-width:820px){
   body{overflow:auto}
   #app{height:auto;min-height:100%}
   #main{flex-direction:column}
-  #ctrl{flex:0 0 auto;width:auto;overflow:visible}
-  #plots{grid-template-columns:1fr;overflow:visible}
-  .card{height:340px}
+  #ctrl{flex:0 0 auto;width:auto;overflow:visible;order:2}
+  #plots{grid-template-columns:1fr;overflow:visible;order:1}
+  .card{height:min(56vh,380px)}
+  #hdr h1{font-size:17px}
+  #presets{margin-left:0}
 }
 </style>
 </head>
@@ -1425,19 +1427,20 @@ function tagText(ctx, x, y, txt, fg, bg, align) {
 /* small legend block */
 function legend(ctx, x, y, items) {
   ctx.save();
-  ctx.font = (FS - 1) + 'px Arial, Helvetica, sans-serif';
+  var LFS = FS - 2, ROW = LFS + 4;
+  ctx.font = LFS + 'px Arial, Helvetica, sans-serif';
   var wmax = 0, i;
-  for (i = 0; i < items.length; i++) wmax = Math.max(wmax, measSub(ctx, items[i].t, FS - 1));
-  var w = wmax + 44, h = items.length * (FS + 6) + 8;
+  for (i = 0; i < items.length; i++) wmax = Math.max(wmax, measSub(ctx, items[i].t, LFS));
+  var w = wmax + 38, h = items.length * ROW + 7;
   ctx.fillStyle = 'rgba(255,255,255,.86)'; ctx.strokeStyle = '#d6dde6'; ctx.lineWidth = 1;
   ctx.fillRect(x, y, w, h); ctx.strokeRect(x + .5, y + .5, w, h);
   for (i = 0; i < items.length; i++) {
-    var yy = y + 6 + (i + 0.5) * (FS + 6);
+    var yy = y + 5 + (i + 0.5) * ROW;
     ctx.strokeStyle = items[i].c; ctx.lineWidth = items[i].w || 3;
     ctx.setLineDash(items[i].d || []);
-    ctx.beginPath(); ctx.moveTo(x + 8, yy); ctx.lineTo(x + 34, yy); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x + 7, yy); ctx.lineTo(x + 29, yy); ctx.stroke();
     ctx.setLineDash([]);
-    drawSub(ctx, items[i].t, x + 40, yy + FS * 0.35, { size: FS - 1, col: COL.text });
+    drawSub(ctx, items[i].t, x + 34, yy + LFS * 0.35, { size: LFS, col: COL.text });
   }
   ctx.restore();
   return h;
@@ -1711,11 +1714,14 @@ function sampleX(W, L, n) {
   return xs;
 }
 
+var badgePad = 0;
 function drawProfile() {
   var cv = $('cvProfile');
   if (ONLY === 'iv') return;
   var f = fitCanvas(cv), ctx = f.ctx, w = f.w, h = f.h;
   if (!MODEL) return;
+  var bg = $('badgeProfile');                 /* keep the badge from covering */
+  badgePad = (bg && bg.style.display !== 'none') ? bg.offsetHeight + 10 : 0;
   if (S.pmode === 'exc') drawProfileExcess(ctx, w, h);
   else drawProfileLog(ctx, w, h);
 }
@@ -1729,7 +1735,7 @@ function drawProfileLog(ctx, w, h) {
     xLo = -(xpU + Math.min(S.Wp, 5 * b.Ln * U));
     xHi = xnU + Math.min(S.Wn, 5 * b.Lp * U);
   }
-  var box = { l: 82, r: w - 16, t: 14, b: h - 50 };
+  var box = { l: 82, r: w - 16, t: 14 + badgePad, b: h - 50 };
   if (box.r - box.l < 60 || box.b - box.t < 60) return;
 
   var ymax = Math.max(b.Na, b.Nd, m.ppE, m.nnE) * 3;
@@ -1784,40 +1790,36 @@ function drawProfileLog(ctx, w, h) {
   var yH0 = ya.t(b.pn0), yH1 = clampY(m.pnE);
   arrow(ctx, pxL, yE0, yE1, COL.elec); dot(ctx, pxL, yE1, 7.5, COL.elec);
   arrow(ctx, pxR, yH0, yH1, COL.hole); dot(ctx, pxR, yH1, 7.5, COL.hole);
-  haloText(ctx, 'n_p(0) = ' + fmtGc(m.npE, 3), pxL - 10, yE1 - 12, COL.elec, 'right', FS - 1, true);
-  haloText(ctx, 'p_n(0) = ' + fmtGc(m.pnE, 3), pxR + 10, yH1 - 12, COL.hole, 'left', FS - 1, true);
+  var offE = (yE1 - box.t) < (box.b - box.t) * 0.3 ? FS + 16 : -12;
+  var offH = (yH1 - box.t) < (box.b - box.t) * 0.3 ? FS + 16 : -12;
+  haloText(ctx, 'n_p(0) = ' + fmtGc(m.npE, 3), pxL - 10, yE1 + offE, COL.elec, 'right', FS - 1, true);
+  haloText(ctx, 'p_n(0) = ' + fmtGc(m.pnE, 3), pxR + 10, yH1 + offH, COL.hole, 'left', FS - 1, true);
   ctx.restore();
 
   /* ---- inline labels ---- */
   ctx.save();
   ctx.beginPath(); ctx.rect(box.l, box.t, box.r - box.l, box.b - box.t); ctx.clip();
-  haloText(ctx, 'p_p ≈ N_a', xa.t(xLo * 0.82), ya.t(b.Na) - 8, COL.hole, 'left', FS, true);
-  haloText(ctx, 'n_n ≈ N_d', xa.t(xHi * 0.82), ya.t(b.Nd) - 8, COL.elec, 'right', FS, true);
+  /* majority labels hug the outer contacts and sit *below* their line, so
+     they clear both the region captions above and the minority curves */
+  var majY = function (v) {                    /* below the line, never under */
+    var y = ya.t(v) + FS + 7;                  /* the region caption above     */
+    return Math.max(y, box.t + FS * 2.6);
+  };
+  haloText(ctx, 'p_p ≈ N_a', box.l + 6, majY(m.ppE), COL.hole, 'left', FS, true);
+  haloText(ctx, 'n_n ≈ N_d', box.r - 6, majY(m.nnE), COL.elec, 'right', FS, true);
   haloText(ctx, 'n_{p0}', box.l + 6, ya.t(b.np0) + FS + 3, COL.elec, 'left', FS - 1);
   haloText(ctx, 'p_{n0}', box.r - 6, ya.t(b.pn0) + FS + 3, COL.hole, 'right', FS - 1);
-  if (Math.abs(m.dnp0) > 0.15 * b.np0) {
-    var dl = Math.min(S.Wp * UM * 0.75, 2.5 * b.Ln);
-    haloText(ctx, 'n_p(x)', xa.t(-(xpU + dl * U)) - 6, ya.t(b.np0 + PHY.excessP(m, dl)) - 8,
-             COL.elec, 'right', FS - 1, true);
-  }
-  if (Math.abs(m.dpn0) > 0.15 * b.pn0) {
-    var dr = Math.min(S.Wn * UM * 0.75, 2.5 * b.Lp);
-    haloText(ctx, 'p_n(x)', xa.t(xnU + dr * U) + 6, ya.t(b.pn0 + PHY.excessN(m, dr)) - 8,
-             COL.hole, 'left', FS - 1, true);
-  }
   ctx.restore();
 
   /* ---- region + SCR annotation ---- */
-  ctx.fillStyle = '#5c6a7c';
-  ctx.font = 'bold ' + FS + 'px Arial, Helvetica, sans-serif';
-  ctx.textAlign = 'center';
-  ctx.fillText('p 영역', (box.l + pxL) / 2, box.t + FS + 2);
-  ctx.fillText('n 영역', (pxR + box.r) / 2, box.t + FS + 2);
+  drawSub(ctx, 'p 영역', box.l + 6, box.t + FS + 2,
+          { align: 'left', size: FS, bold: 1, col: '#5c6a7c', halo: 0.8 });
+  drawSub(ctx, 'n 영역', box.r - 6, box.t + FS + 2,
+          { align: 'right', size: FS, bold: 1, col: '#5c6a7c', halo: 0.8 });
   ctx.save();
   ctx.translate((pxL + pxR) / 2, box.b - 8); ctx.rotate(-Math.PI / 2);
-  ctx.font = 'bold ' + (FS - 2) + 'px Arial, Helvetica, sans-serif';
-  ctx.fillStyle = '#55627a'; ctx.textAlign = 'left';
-  ctx.fillText('SCR  W = ' + fmtLenC(m.W) + (exaggerated ? '  (폭 과장 표시)' : ''), 0, 4);
+  drawSub(ctx, 'SCR  W = ' + fmtLenC(m.W) + (exaggerated ? '  (폭 과장 표시)' : ''), 0, 4,
+          { align: 'left', size: FS - 2, bold: 1, col: '#55627a', halo: 0.8 });
   ctx.restore();
 }
 
@@ -1825,7 +1827,7 @@ function drawProfileLog(ctx, w, h) {
 var yFix = null;
 function drawProfileExcess(ctx, w, h) {
   var m = MODEL, b = m.base, U = 1e4;
-  var box = { l: 100, r: w - 16, t: 16, b: h - 50 };
+  var box = { l: 100, r: w - 16, t: 16 + badgePad, b: h - 50 };
   if (box.r - box.l < 60 || box.b - box.t < 60) return;
 
   /* per-side view length: show the whole base, or 5 diffusion lengths */
