@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pn 접합 다이오드 시뮬레이터</title>
+<style>
+/* ---------- base ---------- */
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;height:100%}
+body{
+  font:16px/1.45 Arial, Helvetica, sans-serif;
+  color:#16191d; background:#eef1f5;
+  overflow:hidden;                 /* the app scrolls internally, not the top */
+  -webkit-text-size-adjust:100%;
+}
+h1,h2,h3{margin:0;font-weight:bold}
+button{font:inherit;font-size:15px;cursor:pointer}
+
+#app{display:flex;flex-direction:column;height:100%;min-height:0}
+
+/* ---------- header ---------- */
+#hdr{
+  flex:0 0 auto;display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;
+  padding:9px 14px;background:#1d2c44;color:#fff;
+}
+#hdr h1{font-size:19px;letter-spacing:-.2px}
+#hdr .sub{font-size:14px;font-weight:normal;color:#a9bcd8;margin-left:8px}
+#presets{display:flex;flex-wrap:wrap;gap:7px;margin-left:auto}
+#presets button{
+  background:#31517d;color:#fff;border:1px solid #4a6da3;border-radius:6px;
+  padding:7px 12px;min-height:34px;
+}
+#presets button:hover{background:#3e6499}
+#presets button.alt{background:#0d1a2e;border-color:#3a5580}
+.linkbtn{
+  background:#0e1a2c;color:#cfe0f8;border:1px solid #3f5a82;border-radius:6px;
+  padding:7px 12px;min-height:34px;
+}
+.linkbtn:hover{background:#16263f}
+
+/* ---------- warning banners ---------- */
+#banners{flex:0 0 auto}
+.banner{
+  padding:8px 14px;font-size:15px;font-weight:bold;border-bottom:1px solid rgba(0,0,0,.12);
+  display:flex;gap:8px;align-items:baseline;
+}
+.banner .why{font-weight:normal}
+.banner.warn{background:#ffe9c7;color:#7a4a00}
+.banner.bad {background:#ffd9d9;color:#8c1616}
+.banner.info{background:#dceafc;color:#173a68}
+
+/* ---------- layout ---------- */
+#main{flex:1 1 auto;display:flex;min-height:0;gap:10px;padding:10px}
+#ctrl{
+  flex:0 0 336px;min-width:0;overflow-y:auto;overflow-x:hidden;
+  background:#fff;border:1px solid #ccd4de;border-radius:8px;padding:12px 13px 18px;
+}
+#plots{
+  flex:1 1 auto;min-width:0;display:grid;gap:10px;
+  grid-template-columns:repeat(auto-fit,minmax(430px,1fr));
+  grid-auto-rows:minmax(300px,1fr);overflow:auto;
+}
+.card{
+  background:#fff;border:1px solid #ccd4de;border-radius:8px;
+  display:flex;flex-direction:column;min-height:300px;min-width:0;overflow:hidden;
+}
+.cardhead{
+  flex:0 0 auto;display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;
+  padding:8px 10px;border-bottom:1px solid #e2e7ee;background:#f7f9fc;
+}
+.cardhead h2{font-size:16px;white-space:nowrap}
+.cardhead .toggles{display:flex;flex-wrap:wrap;gap:6px;margin-left:auto}
+.cvwrap{position:relative;flex:1 1 auto;min-height:0}
+canvas{display:block;width:100%;height:100%}
+.plotbadge{
+  position:absolute;left:8px;top:8px;max-width:70%;
+  background:rgba(255,226,226,.94);border:1px solid #d98b8b;color:#8c1616;
+  font-size:14px;font-weight:bold;padding:5px 9px;border-radius:5px;pointer-events:none;
+}
+.j0line{
+  flex:0 0 auto;padding:7px 10px;border-top:1px solid #e2e7ee;background:#f7f9fc;
+  font-size:15px;display:flex;flex-wrap:wrap;gap:4px 16px;align-items:baseline;
+}
+.j0line b{font-size:18px;color:#123a6b;font-family:"Courier New",monospace}
+
+/* ---------- small toggle buttons ---------- */
+.tg{
+  border:1px solid #b7c2d0;background:#fff;color:#2b3440;border-radius:6px;
+  padding:5px 10px;min-height:30px;font-size:14px;
+}
+.tg:hover{background:#eef3fa}
+.tg.on{background:#2b6cb0;border-color:#2b6cb0;color:#fff}
+.tg.on:hover{background:#3579c0}
+.seg{display:inline-flex;border:1px solid #b7c2d0;border-radius:6px;overflow:hidden}
+.seg button{border:0;background:#fff;color:#2b3440;padding:5px 10px;min-height:30px;font-size:14px}
+.seg button+button{border-left:1px solid #b7c2d0}
+.seg button.on{background:#2b6cb0;color:#fff}
+
+/* ---------- sliders ---------- */
+.group{margin-bottom:14px}
+.grouptitle{
+  font-size:13px;font-weight:bold;letter-spacing:.06em;color:#5c6a7c;
+  text-transform:uppercase;margin:0 0 7px;
+  border-bottom:1px solid #e2e7ee;padding-bottom:4px;
+}
+.sl{margin-bottom:11px}
+.sl .lab{display:flex;align-items:baseline;gap:6px;font-size:15px;margin-bottom:1px}
+.sl .lab .nm{font-weight:bold}
+.sl .lab .val{margin-left:auto;font-family:"Courier New",monospace;font-size:15px;color:#123a6b}
+.sl .row{display:flex;align-items:center;gap:4px}
+.sl input[type=range]{flex:1 1 auto;min-width:0}
+.step{
+  flex:0 0 auto;width:28px;height:28px;line-height:1;padding:0;font-size:16px;
+  border:1px solid #b7c2d0;background:#fff;border-radius:5px;color:#2b3440;
+}
+.step:hover{background:#eef3fa}
+input[type=range]{
+  -webkit-appearance:none;appearance:none;width:100%;height:28px;
+  background:transparent;cursor:pointer;margin:0;
+}
+input[type=range]:focus{outline:none}
+input[type=range]::-webkit-slider-runnable-track{height:8px;background:#ccd6e2;border-radius:4px}
+input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none;width:24px;height:24px;margin-top:-8px;border-radius:50%;
+  background:#2b6cb0;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.35);
+}
+input[type=range]::-moz-range-track{height:8px;background:#ccd6e2;border-radius:4px}
+input[type=range]::-moz-range-thumb{
+  width:22px;height:22px;border-radius:50%;background:#2b6cb0;border:2px solid #fff;
+  box-shadow:0 1px 3px rgba(0,0,0,.35);
+}
+input[type=range].warn::-webkit-slider-thumb{background:#c0392b}
+input[type=range].warn::-moz-range-thumb{background:#c0392b}
+
+/* ---------- readout ---------- */
+table.ro{width:100%;border-collapse:collapse;font-size:14.5px}
+table.ro td{padding:2px 0;vertical-align:baseline}
+table.ro td.k{color:#4a5666;white-space:nowrap;padding-right:6px}
+table.ro td.v{
+  text-align:right;font-family:"Courier New",monospace;color:#11294a;
+  white-space:nowrap;font-size:14.5px;
+}
+table.ro tr.sep td{border-top:1px solid #e8ecf2;padding-top:5px}
+.tag{
+  display:inline-block;font-family:Arial,Helvetica,sans-serif;font-size:12.5px;
+  font-weight:bold;border-radius:4px;padding:1px 6px;margin-left:5px;color:#fff;
+}
+.tag.g{background:#2e7d4f}.tag.y{background:#b8860b}.tag.r{background:#c0392b}
+.tag.b{background:#2b6cb0}.tag.n{background:#6b7684}
+.help{cursor:help;color:#2b6cb0;font-weight:bold}
+
+/* ---------- override panel ---------- */
+.ovhead{display:flex;align-items:center;gap:8px;font-size:15px;font-weight:bold;
+  padding:6px 0;cursor:pointer;user-select:none}
+.ovhead .car{color:#2b6cb0;font-size:13px}
+.ovbody{display:none;border-left:3px solid #dbe3ec;padding-left:9px;margin-bottom:6px}
+.ovbody.open{display:block}
+.ovrow{display:flex;align-items:center;gap:6px;margin-bottom:3px}
+.ovrow label{font-size:14.5px}
+.reset{
+  margin-left:auto;font-size:12.5px;padding:3px 7px;min-height:26px;
+  border:1px solid #b7c2d0;background:#fff;border-radius:5px;color:#2b3440;
+}
+.reset:hover{background:#eef3fa}
+.chk{display:flex;align-items:center;gap:7px;font-size:15px;margin:4px 0;cursor:pointer}
+.chk input{width:20px;height:20px;cursor:pointer}
+.note{font-size:13px;color:#5c6a7c;line-height:1.35;margin-top:4px}
+
+/* ---------- self test output ---------- */
+#selftest{
+  display:none;position:absolute;inset:0;z-index:50;overflow:auto;margin:0;
+  background:#101820;color:#d7e3f0;font:13px/1.4 "Courier New",monospace;padding:14px;
+  white-space:pre-wrap;
+}
+#selftest.show{display:block}
+
+/* ---------- embed / single-plot modes ---------- */
+body.embed #hdr{padding:6px 10px}
+body.embed #hdr h1,body.embed #hdr .sub{display:none}
+body.embed #presets{margin-left:0}
+body.single #plots{grid-template-columns:1fr}
+
+/* ---------- narrow: fold into one column, allow page scroll ---------- */
+@media (max-width:900px){
+  body{overflow:auto}
+  #app{height:auto;min-height:100%}
+  #main{flex-direction:column}
+  #ctrl{flex:0 0 auto;width:auto;overflow:visible}
+  #plots{grid-template-columns:1fr;overflow:visible}
+  .card{height:340px}
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="hdr"><h1>pn 접합 다이오드 시뮬레이터<span class="sub">물리 엔진 자체 검증</span></h1></div>
+  <div id="main"><pre id="selftest" class="show" style="position:static"></pre></div>
+</div>
+<script>
+"use strict";
+/* ==========================================================================
+   PHYSICS ENGINE  (pure functions, no DOM access)
+   --------------------------------------------------------------------------
+   Internal unit system is cm-s-V throughout:
+     concentration [cm^-3], mobility [cm^2/V.s], diffusivity [cm^2/s],
+     length [cm], time [s], current density [A/cm^2], voltage [V].
+   Only the UI layer converts to um / ns / us for display.
+   ========================================================================== */
+/* PHYSICS-ENGINE-BEGIN */
+var PHY = (function () {
+  'use strict';
+
+  /* ---------------- 1. constants ---------------- */
+  var Q    = 1.602e-19;    /* elementary charge            [C]    */
+  var KB   = 1.381e-23;    /* Boltzmann constant           [J/K]  */
+  var EPS0 = 8.854e-14;    /* vacuum permittivity          [F/cm] */
+  var ER   = 11.7;         /* Si relative permittivity            */
+  var NI300 = 1.5e10;      /* ni(300 K) used by the lecture notes */
+
+  /* 2. ni(T) = A (T/300)^2.54 exp(-6726/T).
+     A is normalised so that ni(300 K) is exactly NI300 = 1.5e10 cm^-3.
+     (The raw model gives ~1.0e10, which would not match hand calculations.) */
+  var NI_A = NI300 / Math.exp(-6726 / 300);
+
+  function vTherm(T) { return KB * T / Q; }               /* kT/q  [V]      */
+  function niOfT(T)  { return NI_A * Math.pow(T / 300, 2.54) * Math.exp(-6726 / T); }
+
+  /* ---------------- 3. mobility: Caughey-Thomas (Si, 300 K) ---------------- */
+  function muN300(N) { return 65.0 + (1330 - 65.0) / (1 + Math.pow(N / 8.5e16, 0.72)); }
+  function muP300(N) { return 47.7 + (495 - 47.7) / (1 + Math.pow(N / 6.3e16, 0.76)); }
+  /* optional temperature extension (lattice scattering exponents) */
+  function muN(N, T) { return muN300(N) * Math.pow(T / 300, -2.42); }
+  function muP(N, T) { return muP300(N) * Math.pow(T / 300, -2.20); }
+
+  /* ---------------- 4. lifetime: Scharfetter SRH in parallel with Auger ----
+     These are *derived* from the doping sliders - they are not user dials.  */
+  var CP_AUG = 9.9e-32;    /* [cm^6/s] Auger coefficient, p-side electrons  */
+  var CN_AUG = 2.8e-31;    /* [cm^6/s] Auger coefficient, n-side holes      */
+  function tauNof(Na) { return 1 / ((1 + Na / 1e16) / 1.0e-5 + CP_AUG * Na * Na); }
+  function tauPof(Nd) { return 1 / ((1 + Nd / 1e16) / 3.0e-6 + CN_AUG * Nd * Nd); }
+
+  /* ---------------- numerically safe helpers ---------------- */
+
+  /* coth(u), stable for u -> 0 and u -> inf */
+  function coth(u) {
+    if (!isFinite(u)) return 1;
+    if (u < 1e-3) return 1 / u + u / 3;          /* series, avoids 0/0        */
+    var e = Math.exp(-2 * u);                    /* argument always <= 0      */
+    return (1 + e) / (1 - e);
+  }
+
+  /* sinh((W-x)/L) / sinh(W/L)  -- the long/short base shape factor.
+     Written so every exponential argument is <= 0: no overflow for any W/L. */
+  function shapeRatio(x, W, L) {
+    var u = W / L;
+    if (!isFinite(u) || u < 1e-2) return 1 - x / W;   /* short base -> linear */
+    var a = (W - x) / L;                              /* 0 <= a <= u          */
+    return (Math.exp(a - u) - Math.exp(-a - u)) / (1 - Math.exp(-2 * u));
+  }
+
+  /* Exact SCR boundary law (section 8): solves simultaneously
+        p * n  = ni^2 exp(Vj/Vt)        (junction law, any injection level)
+        n - p  = Nmaj                   (quasi-neutrality, any injection level)
+     ->  p = [ -Nmaj + sqrt(Nmaj^2 + 4S) ] / 2 ,   S = ni^2 exp(Vj/Vt)
+     The rationalised form below removes the catastrophic cancellation that
+     ruins  -Nmaj + sqrt(Nmaj^2 + eps)  under reverse / small forward bias. */
+  function minorityAtEdge(Nmaj, ni, vt, Vj) {
+    var lnS = 2 * Math.log(ni) + Vj / vt;             /* work in log space   */
+    if (lnS > 700) lnS = 700;                         /* clamp: keeps finite */
+    var S = Math.exp(lnS);
+    return 2 * S / (Nmaj + Math.sqrt(Nmaj * Nmaj + 4 * S));
+  }
+
+  /* ---------------- static (bias independent) part of the model ---------- */
+  /* p = {Na, Nd, Wp, Wn, T, ovrTau, tau_n, tau_p, ovrD, Dn, Dp, ovrL, Ln, Lp}
+     Wp, Wn are quasi-neutral widths in cm.                                  */
+  function build(p) {
+    var T = p.T, vt = vTherm(T), ni = niOfT(T);
+
+    /* minority-carrier mobilities: electrons live in the p side (doping Na),
+       holes live in the n side (doping Nd)                                  */
+    var mun_min = muN(p.Na, T);
+    var mup_min = muP(p.Nd, T);
+    /* majority-carrier mobilities, used only by the series resistance (12)  */
+    var mun_maj = muN(p.Nd, T);     /* electrons are majority in the n side  */
+    var mup_maj = muP(p.Na, T);     /* holes are majority in the p side      */
+
+    var tauN_auto = tauNof(p.Na), tauP_auto = tauPof(p.Nd);
+    var tau_n = p.ovrTau ? p.tau_n : tauN_auto;
+    var tau_p = p.ovrTau ? p.tau_p : tauP_auto;
+
+    var Dn_auto = vt * mun_min, Dp_auto = vt * mup_min;
+    var Dn = p.ovrD ? p.Dn : Dn_auto;
+    var Dp = p.ovrD ? p.Dp : Dp_auto;
+
+    var Ln_auto = Math.sqrt(Dn * tau_n), Lp_auto = Math.sqrt(Dp * tau_p);
+    var Ln = p.ovrL ? p.Ln : Ln_auto;
+    var Lp = p.ovrL ? p.Lp : Lp_auto;
+
+    /* Equilibrium minority densities.  Evaluated from the *same* exact law at
+       Vj = 0 rather than from ni^2/N, so that the excess densities vanish
+       identically at zero bias (J(0) = 0 to machine precision).  The two
+       differ by a relative (ni/N)^2 <= 2e-8 over the whole slider range. */
+    var pn0 = minorityAtEdge(p.Nd, ni, vt, 0);
+    var np0 = minorityAtEdge(p.Na, ni, vt, 0);
+
+    var Vbi = vt * Math.log(p.Na * p.Nd / (ni * ni));
+
+    /* series resistance of the two quasi-neutral bulks (majority transport) */
+    var RsA = p.Wn / (Q * mun_maj * p.Nd) + p.Wp / (Q * mup_maj * p.Na);
+
+    var uN = p.Wn / Lp;             /* n-side  base length / hole  diff.len. */
+    var uP = p.Wp / Ln;             /* p-side  base length / elec. diff.len. */
+
+    /* low-injection saturation current density including the coth(W/L)
+       geometry factor: reduces to q ni^2 (Dp/(Lp Nd) + Dn/(Ln Na)) for a long
+       base, and to q ni^2 (Dp/(Nd Wn) + Dn/(Na Wp)) for a short base.       */
+    var J0p = Q * ni * ni * Dp * coth(uN) / (Lp * p.Nd);
+    var J0n = Q * ni * ni * Dn * coth(uP) / (Ln * p.Na);
+
+    var tau_g = Math.sqrt(tau_n * tau_p);
+
+    return {
+      Na: p.Na, Nd: p.Nd, Wp: p.Wp, Wn: p.Wn, T: T,
+      vt: vt, ni: ni,
+      mun_min: mun_min, mup_min: mup_min, mun_maj: mun_maj, mup_maj: mup_maj,
+      tauN_auto: tauN_auto, tauP_auto: tauP_auto, tau_n: tau_n, tau_p: tau_p,
+      Dn_auto: Dn_auto, Dp_auto: Dp_auto, Dn: Dn, Dp: Dp,
+      Ln_auto: Ln_auto, Lp_auto: Lp_auto, Ln: Ln, Lp: Lp,
+      pn0: pn0, np0: np0, Vbi: Vbi, RsA: RsA,
+      uN: uN, uP: uP, cothN: coth(uN), cothP: coth(uP),
+      J0p: J0p, J0n: J0n, J0: J0p + J0n, tau_g: tau_g
+    };
+  }
+
+  /* ---------------- bias dependent part: everything at a given Vj -------- */
+  function stateAt(b, Vj, opt) {
+    var gen = opt && opt.gen;
+
+    /* --- 8. SCR boundary values, no low-injection approximation --- */
+    var pnE = minorityAtEdge(b.Nd, b.ni, b.vt, Vj);   /* holes at n edge    */
+    var npE = minorityAtEdge(b.Na, b.ni, b.vt, Vj);   /* electrons at p edge*/
+    var nnE = pnE + b.Nd;                             /* quasi-neutrality   */
+    var ppE = npE + b.Na;
+    var dpn0 = pnE - b.pn0;
+    var dnp0 = npE - b.np0;
+
+    /* --- 10. ambipolar (injection dependent) diffusivity ---
+       Low injection  -> Dp (resp. Dn);  high injection -> 2 Dn Dp/(Dn+Dp).
+       Note: the *diffusion lengths* keep their low-injection values; solving
+       L self-consistently at high injection is beyond the scope here.      */
+    var DeffP = (nnE + pnE) * b.Dn * b.Dp / (nnE * b.Dn + pnE * b.Dp);
+    var DeffN = (npE + ppE) * b.Dn * b.Dp / (npE * b.Dn + ppE * b.Dp);
+
+    /* --- 11. current densities --- */
+    var Jp = Q * DeffP * dpn0 / b.Lp * b.cothN;
+    var Jn = Q * DeffN * dnp0 / b.Ln * b.cothP;
+
+    /* --- 7. depletion layer --- */
+    var dV = b.Vbi - Vj;
+    var clamped = false;
+    if (dV < 1e-6) { dV = 1e-6; clamped = true; }
+    var W  = Math.sqrt(2 * EPS0 * ER * dV / Q * (1 / b.Na + 1 / b.Nd));
+    var xn = W * b.Na / (b.Na + b.Nd);
+    var xp = W * b.Nd / (b.Na + b.Nd);
+
+    /* --- 13. SCR generation current (optional, reverse bias only) ---
+       Standard SRH result q ni W /(2 tau_g) * (exp(Vj/2Vt) - 1), restricted
+       to Vj < 0 as specified.  The (1 - exp(Vj/2Vt)) factor keeps J(Vj)
+       continuous at Vj = 0 instead of stepping by q ni W(0)/(2 tau_g).     */
+    var Jgen = 0;
+    if (gen && Vj < 0) {
+      Jgen = Q * b.ni * W / (2 * b.tau_g) * (1 - Math.exp(Vj / (2 * b.vt)));
+    }
+    var J = Jp + Jn - Jgen;
+
+    /* --- 14. injection ratio (referred to the equilibrium majority level) - */
+    var r = Math.max(dpn0 / b.Nd, dnp0 / b.Na);
+
+    return {
+      Vj: Vj, pnE: pnE, npE: npE, nnE: nnE, ppE: ppE,
+      dpn0: dpn0, dnp0: dnp0, DeffP: DeffP, DeffN: DeffN,
+      Jp: Jp, Jn: Jn, Jgen: Jgen, J: J,
+      W: W, xn: xn, xp: xp, r: r,
+      depletionClamped: clamped,
+      depletionBroken: Vj >= b.Vbi - 3 * b.vt
+    };
+  }
+
+  /* ---------------- 12. self-consistent solution of Vj = Va - J(Vj) Rs ----
+     f(Vj) = Vj + J(Vj) Rs - Va is strictly increasing, so the root is
+     bracketed by [min(Va,0), max(Va,0)].  Newton with a bisection safeguard
+     (rtsafe) therefore always converges.                                    */
+  function solveVj(b, Va, opt) {
+    if (!opt.rs || b.RsA <= 0 || Va === 0) {
+      return { Vj: Va, iter: 0, converged: true, bisect: 0 };
+    }
+    var Rs = b.RsA;
+    var f = function (v) { return v + stateAt(b, v, opt).J * Rs - Va; };
+
+    var lo = Math.min(Va, 0), hi = Math.max(Va, 0);
+    var flo = f(lo), fhi = f(hi);
+    if (flo >= 0) return { Vj: lo, iter: 0, converged: true, bisect: 0 };
+    if (fhi <= 0) return { Vj: hi, iter: 0, converged: true, bisect: 0 };
+
+    var Vj = Va;                       /* initial guess required by the spec */
+    var dxOld = hi - lo, dx = dxOld, h = 1e-6, nb = 0, i;
+    for (i = 1; i <= 60; i++) {
+      var fv = f(Vj);
+      if (fv < 0) lo = Vj; else hi = Vj;
+      var df = (f(Vj + h) - f(Vj - h)) / (2 * h);
+      var outOfRange = ((Vj - hi) * df - fv) * ((Vj - lo) * df - fv) > 0;
+      if (!isFinite(df) || df <= 0 || outOfRange ||
+          Math.abs(2 * fv) > Math.abs(dxOld * df)) {
+        dxOld = dx; dx = 0.5 * (hi - lo); Vj = lo + dx; nb++;   /* bisect */
+      } else {
+        dxOld = dx; dx = fv / df; Vj = Vj - dx;                 /* Newton */
+      }
+      if (Math.abs(dx) < 1e-9) return { Vj: Vj, iter: i, converged: true, bisect: nb };
+    }
+    return { Vj: Vj, iter: 60, converged: false, bisect: nb };
+  }
+
+  /* ---------------- top level ---------------- */
+  function solve(p) {
+    var b = build(p);
+    var opt = { rs: !!p.rs, gen: !!p.gen };
+    var sol = solveVj(b, p.Va, opt);
+    var s = stateAt(b, sol.Vj, opt);
+    s.Va = p.Va; s.iter = sol.iter; s.converged = sol.converged;
+    s.bisect = sol.bisect; s.base = b;
+    return s;
+  }
+
+  /* fast sweep: the bias-independent part is built once */
+  function sweep(p, VaList) {
+    var b = build(p);
+    var opt = { rs: !!p.rs, gen: !!p.gen };
+    var out = new Array(VaList.length), i;
+    for (i = 0; i < VaList.length; i++) {
+      var sol = solveVj(b, VaList[i], opt);
+      var s = stateAt(b, sol.Vj, opt);
+      s.Va = VaList[i]; s.iter = sol.iter; s.converged = sol.converged;
+      out[i] = s;
+    }
+    return { base: b, pts: out };
+  }
+
+  /* excess minority profile, x measured from the SCR edge [cm] */
+  function excessN(s, x) { return s.dpn0 * shapeRatio(x, s.base.Wn, s.base.Lp); }
+  function excessP(s, x) { return s.dnp0 * shapeRatio(x, s.base.Wp, s.base.Ln); }
+
+  return {
+    Q: Q, KB: KB, EPS0: EPS0, ER: ER, NI300: NI300,
+    vTherm: vTherm, niOfT: niOfT,
+    muN: muN, muP: muP, muN300: muN300, muP300: muP300,
+    tauNof: tauNof, tauPof: tauPof,
+    coth: coth, shapeRatio: shapeRatio, minorityAtEdge: minorityAtEdge,
+    build: build, stateAt: stateAt, solveVj: solveVj,
+    solve: solve, sweep: sweep, excessN: excessN, excessP: excessP
+  };
+})();
+/* PHYSICS-ENGINE-END */
+
+/* ==========================================================================
+   SELF TEST  -  run  runSelfTests()  from the browser console, or append
+   ?test=1 to the URL.  Also executed head-less by the build's node harness.
+   ========================================================================== */
+/* SELFTEST-BEGIN */
+function runSelfTests(verbose) {
+  var UM = 1e-4;                                   /* 1 um in cm            */
+  var log = [], nPass = 0, nFail = 0;
+
+  function P(o) {
+    var d = { Na: 5e17, Nd: 2e16, Va: 0, Wp: 300 * UM, Wn: 300 * UM, T: 300,
+              rs: false, gen: false,
+              ovrTau: false, tau_n: 1e-8, tau_p: 3e-7,
+              ovrD: false, Dn: 10, Dp: 10,
+              ovrL: false, Ln: 3e-4, Lp: 17e-4 };
+    for (var k in o) if (o.hasOwnProperty(k)) d[k] = o[k];
+    return d;
+  }
+  function rel(a, b) { return Math.abs(a - b) / Math.max(Math.abs(b), 1e-300); }
+  function chk(name, ok, detail) {
+    if (ok) { nPass++; } else { nFail++; }
+    log.push((ok ? 'PASS  ' : 'FAIL  ') + name + (detail ? '\n        ' + detail : ''));
+  }
+  function note(txt) { log.push('        ' + txt); }
+  function e(x, n) { return Number(x).toExponential(n === undefined ? 3 : n); }
+
+  /* ---- 1. zero bias ---- */
+  (function () {
+    var ok = true, det = [];
+    [false, true].forEach(function (rs) {
+      var s = PHY.solve(P({ Va: 0, rs: rs }));
+      var bad = Math.abs(s.dpn0) > 1e-30 || Math.abs(s.dnp0) > 1e-30 || Math.abs(s.J) > 1e-30;
+      if (bad) ok = false;
+      det.push('Rs=' + (rs ? 'on ' : 'off') + '  dpn0=' + e(s.dpn0) +
+               '  dnp0=' + e(s.dnp0) + '  J=' + e(s.J));
+    });
+    chk('1  Va = 0  ->  all excess = 0, J = 0  (|.| < 1e-30)', ok, det.join('\n        '));
+  })();
+
+  /* ---- 2. reverse saturation ---- */
+  (function () {
+    var p = P({ Va: -0.5 }), s = PHY.solve(p), b = s.base;
+    var e1 = rel(s.dpn0, -b.pn0), e2 = rel(s.J, -b.J0);
+    chk('2  Va = -0.5 V  ->  dpn(0) = -pn0 , J = -J0', e1 < 1e-6 && e2 < 1e-6,
+        'dpn0=' + e(s.dpn0) + '  -pn0=' + e(-b.pn0) + '  (rel ' + e(e1, 1) + ')\n        ' +
+        'J   =' + e(s.J) + '  -J0 =' + e(-b.J0) + '  (rel ' + e(e2, 1) + ')');
+  })();
+
+  /* ---- 3. reverse-bias numerical stability (catastrophic cancellation) ---- */
+  (function () {
+    var p = P({ Va: -1, Nd: 1e19, rs: false }), s = PHY.solve(p), b = s.base;
+    var approx = b.pn0 * Math.exp(-1 / b.vt);
+    var er = rel(s.pnE, approx);
+    chk('3  Va = -1 V, Nd = 1e19  ->  pn(0) matches pn0.exp(Va/Vt) within 1e-6',
+        s.pnE > 0 && er < 1e-6,
+        'pn(0)=' + e(s.pnE, 8) + '   pn0.exp=' + e(approx, 8) + '   rel err ' + e(er, 2));
+  })();
+
+  /* ---- 4. long base  ->  exponential ---- */
+  (function () {
+    var p = P({ Va: 0.4, ovrL: true, Ln: 3e-4, Lp: 10 * UM, Wn: 300 * UM, Wp: 300 * UM });
+    var s = PHY.solve(p), b = s.base, u = b.Wn / b.Lp, worst = 0, i;
+    for (i = 0; i <= 400; i++) {
+      var x = b.Wn * i / 400;
+      var f1 = PHY.shapeRatio(x, b.Wn, b.Lp), f2 = Math.exp(-x / b.Lp);
+      worst = Math.max(worst, Math.abs(f1 - f2));
+    }
+    chk('4  Wn/Lp = ' + u.toFixed(1) + ' (>=20)  ->  profile equals dpn0.exp(-x/Lp)',
+        worst < 0.01,
+        'max |sinh-form - exp-form| / dpn0 = ' + e(worst, 2) + '  (limit 1e-2)');
+  })();
+
+  /* ---- 5. short base  ->  straight line, and Jp -> q ni^2 Dp /(Nd Wn) ---- */
+  (function () {
+    var Wn = 0.5 * UM;
+    var p = P({ Va: 0.3, Wn: Wn, Wp: 300 * UM }), s = PHY.solve(p), b = s.base;
+    var u = b.Wn / b.Lp, worst = 0, i;
+    for (i = 0; i <= 400; i++) {
+      var x = b.Wn * i / 400;
+      worst = Math.max(worst, Math.abs(PHY.shapeRatio(x, b.Wn, b.Lp) - (1 - x / b.Wn)));
+    }
+    var JpShort = PHY.Q * b.ni * b.ni * b.Dp / (b.Nd * b.Wn) * (Math.exp(0.3 / b.vt) - 1);
+    var er = rel(s.Jp, JpShort);
+    chk('5  Wn/Lp = ' + e(u, 2) + ' (<=0.05)  ->  straight line, Jp -> q ni^2 Dp/(Nd Wn)',
+        worst < 0.01 && er < 0.01,
+        'max |sinh-form - linear| / dpn0 = ' + e(worst, 2) + '\n        ' +
+        'Jp=' + e(s.Jp) + '   short-base limit=' + e(JpShort) + '   rel ' + e(er, 2));
+  })();
+
+  /* ---- 6. low-injection limit of the exact boundary law ---- */
+  (function () {
+    var p = P({ Va: 0.3, Nd: 1e17, rs: false }), s = PHY.solve(p), b = s.base;
+    var approx = b.pn0 * Math.exp(0.3 / b.vt);
+    var er = rel(s.pnE, approx);
+    chk('6  Va = 0.3 V, Nd = 1e17  ->  exact pn(0) = pn0.exp(Va/Vt) within 1e-4',
+        er < 1e-4, 'exact=' + e(s.pnE, 8) + '  approx=' + e(approx, 8) + '  rel ' + e(er, 2));
+  })();
+
+  /* ---- 7 / 8. ideality factor from the slope of log10 J ---- */
+  function slope(p, Va, key) {
+    var h = 2e-4;
+    var a = PHY.solve(P(Object.assign({}, p, { Va: Va - h })));
+    var b = PHY.solve(P(Object.assign({}, p, { Va: Va + h })));
+    return (Math.log10(b[key]) - Math.log10(a[key])) / (2 * h);
+  }
+  (function () {
+    var cfg = { Nd: 1e15, Na: 1e17, rs: false };
+    var n2 = 1 / (2 * PHY.vTherm(300) * Math.LN10);      /* 8.40 dec/V */
+    var rows = [], v, sTot, sJp, minTot = 1e9, jpAt75 = 0;
+    for (v = 0.55; v <= 0.7501; v += 0.05) {
+      sTot = slope(cfg, v, 'J'); sJp = slope(cfg, v, 'Jp');
+      minTot = Math.min(minTot, sTot); jpAt75 = sJp;
+      rows.push('Va=' + v.toFixed(2) + '  dlog10(J)/dVa=' + sTot.toFixed(2) +
+                '   dlog10(Jp)/dVa=' + sJp.toFixed(2));
+    }
+    chk('7  high injection (Nd=1e15, Na=1e17)  ->  slope bends towards n=2 (' +
+        n2.toFixed(2) + ' dec/V)',
+        minTot < 11.0 && rel(jpAt75, n2) < 0.12,
+        rows.join('\n        ') + '\n        ' +
+        'the high-injected n side (Jp) reaches ' + jpAt75.toFixed(2) +
+        ' dec/V; the total stays higher because the\n        ' +
+        'heavily doped p side (Jn) is still low-injection and keeps its n=1 slope.');
+  })();
+  (function () {
+    var cfg = { Nd: 1e15, Na: 1e17, rs: false };
+    var n1 = 1 / (PHY.vTherm(300) * Math.LN10);          /* 16.79 dec/V */
+    var rows = [], v, ok = true;
+    for (v = 0.20; v <= 0.3501; v += 0.05) {
+      var s = slope(cfg, v, 'J');
+      if (rel(s, n1) > 0.01) ok = false;
+      rows.push('Va=' + v.toFixed(2) + '  dlog10(J)/dVa=' + s.toFixed(2));
+    }
+    chk('8  low injection, same device  ->  slope = n=1 (' + n1.toFixed(2) + ' dec/V)',
+        ok, rows.join('\n        '));
+  })();
+
+  /* ---- 9. lecture preset with the measured lifetimes ---- */
+  (function () {
+    var b = PHY.build(P({ ovrTau: true, tau_n: 10e-9, tau_p: 300e-9 }));
+    var d = ['Dn=' + b.Dn.toFixed(2) + ' cm2/s (exp 8.8)   Dp=' + b.Dp.toFixed(2) + ' cm2/s (exp 9.4)',
+             'Ln=' + (b.Ln / UM).toFixed(2) + ' um (exp 3.0)   Lp=' + (b.Lp / UM).toFixed(2) + ' um (exp 17)',
+             'J0=' + e(b.J0) + ' A/cm2 (exp 1.2e-11)'].join('\n        ');
+    chk('9  lecture preset (tau override 10 ns / 300 ns)',
+        rel(b.Dn, 8.8) < 0.02 && rel(b.Dp, 9.4) < 0.02 &&
+        rel(b.Ln / UM, 3.0) < 0.03 && rel(b.Lp / UM, 17) < 0.03 &&
+        rel(b.J0, 1.2e-11) < 0.05, d);
+  })();
+
+  /* ---- 10. same doping, automatic lifetime model ---- */
+  (function () {
+    var b = PHY.build(P({}));
+    var d = ['tau_n=' + (b.tau_n * 1e9).toFixed(1) + ' ns (exp 196)   tau_p=' +
+             (b.tau_p * 1e6).toFixed(2) + ' us (exp 1.0)',
+             'Ln=' + (b.Ln / UM).toFixed(2) + ' um (exp 13)   Lp=' + (b.Lp / UM).toFixed(2) + ' um (exp 31)',
+             'J0=' + e(b.J0) + ' A/cm2 (exp 6.0e-12)'].join('\n        ');
+    chk('10 same doping, automatic Scharfetter+Auger lifetimes',
+        rel(b.tau_n * 1e9, 196) < 0.02 && rel(b.tau_p * 1e6, 1.0) < 0.02 &&
+        rel(b.Ln / UM, 13) < 0.03 && rel(b.Lp / UM, 31) < 0.03 &&
+        rel(b.J0, 6.0e-12) < 0.05, d);
+  })();
+
+  /* ---- 11. Na x10  ->  Jn / 10 ---- */
+  (function () {
+    var fix = { ovrTau: true, tau_n: 10e-9, tau_p: 300e-9, ovrD: true, Dn: 8.8, Dp: 9.4,
+                ovrL: true, Ln: 3e-4, Lp: 17e-4, Va: 0.3 };
+    var a = PHY.solve(P(Object.assign({ Na: 5e17 }, fix)));
+    var b = PHY.solve(P(Object.assign({ Na: 5e18 }, fix)));
+    var rFix = a.Jn / b.Jn;
+    var c = PHY.solve(P({ Na: 1e14, Va: 0.3 })), d = PHY.solve(P({ Na: 1e15, Va: 0.3 }));
+    var rAuto = c.Jn / d.Jn;
+    var g = PHY.solve(P({ Na: 5e17, Va: 0.3 })), h = PHY.solve(P({ Na: 5e18, Va: 0.3 }));
+    var rHigh = g.Jn / h.Jn;
+    chk('11 Na x10  ->  Jn drops by ~10x',
+        rel(rFix, 10) < 0.01 && rel(rAuto, 10) < 0.05,
+        'D,tau,L pinned (overrides on): Jn ratio = ' + rFix.toFixed(3) + '  (exactly 1/Na)\n        ' +
+        'fully automatic, 1e14->1e15 : Jn ratio = ' + rAuto.toFixed(2) + '\n        ' +
+        'fully automatic, 5e17->5e18 : Jn ratio = ' + rHigh.toFixed(2) +
+        '  <- only ~5x, because mu and tau fall with doping too');
+  })();
+
+  /* ---- 12. Newton convergence over the whole slider range ---- */
+  (function () {
+    var Ns = [1e14, 1e16, 1e19], Ws = [0.1 * UM, 30 * UM, 500 * UM], Ts = [250, 300, 400];
+    var Vas = [-2, -1, -0.3, -0.005, 0, 0.005, 0.2, 0.45, 0.6, 0.75, 0.9, 1.0];
+    var worst = 0, bad = 0, cases = 0, i, j, k, l, m, n;
+    for (i = 0; i < Ns.length; i++) for (j = 0; j < Ns.length; j++)
+      for (k = 0; k < Ws.length; k++) for (l = 0; l < Ws.length; l++)
+        for (m = 0; m < Ts.length; m++) for (n = 0; n < Vas.length; n++) {
+          var s = PHY.solve(P({ Na: Ns[i], Nd: Ns[j], Wp: Ws[k], Wn: Ws[l],
+                                T: Ts[m], Va: Vas[n], rs: true, gen: true }));
+          cases++;
+          worst = Math.max(worst, s.iter);
+          if (!s.converged || !isFinite(s.J) || !isFinite(s.Vj)) bad++;
+        }
+    chk('12 self-consistent Vj solver converges everywhere (Rs + Jgen on)',
+        bad === 0 && worst <= 60,
+        cases + ' parameter combinations, worst case ' + worst +
+        ' iterations, non-converged/non-finite: ' + bad);
+  })();
+
+  var head = '=== pn diode simulator - physics self test ===';
+  var tail = '=== ' + nPass + ' passed, ' + nFail + ' failed ===';
+  var text = [head].concat(log).concat([tail]).join('\n');
+  if (verbose !== false) { (typeof console !== 'undefined') && console.log(text); }
+  return { pass: nPass, fail: nFail, text: text };
+}
+/* SELFTEST-END */
+
+/* stage 1: show the physics self-test result on screen */
+document.getElementById('selftest').textContent = runSelfTests(false).text;
+</script>
+</body>
+</html>
