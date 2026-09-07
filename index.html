@@ -194,8 +194,101 @@ body.single #plots{grid-template-columns:1fr}
 </head>
 <body>
 <div id="app">
-  <div id="hdr"><h1>pn 접합 다이오드 시뮬레이터<span class="sub">물리 엔진 자체 검증</span></h1></div>
-  <div id="main"><pre id="selftest" class="show" style="position:static"></pre></div>
+
+  <div id="hdr">
+    <h1>pn 접합 다이오드 시뮬레이터<span class="sub">소수캐리어 분포와 J–V 특성</span></h1>
+    <div id="presets">
+      <button data-preset="lecture">강의 예제</button>
+      <button data-preset="long">Long base</button>
+      <button data-preset="short">Short base</button>
+      <button data-preset="high">고준위 주입 관찰</button>
+      <button class="linkbtn" id="btnLink" title="현재 슬라이더 상태가 담긴 주소를 복사합니다">링크 복사</button>
+      <button class="linkbtn" id="btnTest" title="물리 엔진 자체 검증 12항목을 실행합니다">자체 검증</button>
+    </div>
+  </div>
+
+  <div id="banners"></div>
+
+  <div id="main">
+
+    <div id="ctrl">
+      <div class="group">
+        <div class="grouptitle">소자 파라미터</div>
+        <div id="slDevice"></div>
+      </div>
+
+      <div class="group">
+        <div class="grouptitle">동작 조건</div>
+        <div id="slBias"></div>
+        <label class="chk"><input type="checkbox" data-bind="rs"><span>직렬저항 포함 &nbsp;V<sub>j</sub> = V<sub>a</sub> − J·R<sub>s</sub>A</span></label>
+        <label class="chk"><input type="checkbox" data-bind="gen"><span>역방향 SCR 생성전류 포함</span></label>
+      </div>
+
+      <div class="group">
+        <div class="grouptitle">계산값</div>
+        <div id="readout"></div>
+      </div>
+
+      <div class="group">
+        <div class="ovhead" id="ovHead"><span class="car">▶</span>고급 · 자동 계산값 덮어쓰기</div>
+        <div class="ovbody" id="ovBody">
+          <div class="note">도핑–이동도–수명 결합을 끊고 개별 파라미터의 영향만 관찰할 때 사용합니다.
+            체크를 풀면 자동 모델로 되돌아갑니다.</div>
+          <label class="chk"><input type="checkbox" data-bind="ovrTau"><span>수명 τ 직접 지정</span></label>
+          <div id="slTau"></div>
+          <label class="chk"><input type="checkbox" data-bind="ovrD"><span>확산계수 D 직접 지정</span></label>
+          <div id="slD"></div>
+          <label class="chk"><input type="checkbox" data-bind="ovrL"><span>확산거리 L 직접 지정</span></label>
+          <div id="slL"></div>
+          <div class="note">L을 직접 지정하지 않으면 L = √(D·τ) 로 따라옵니다.</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="plots">
+
+      <section class="card" id="cardProfile">
+        <div class="cardhead">
+          <h2>캐리어 농도 프로파일</h2>
+          <div class="toggles">
+            <span class="seg">
+              <button data-mode="log">전체 (log)</button>
+              <button data-mode="exc">과잉 캐리어만 (linear)</button>
+            </span>
+            <button class="tg excOnly" data-bind="yfix">y 고정</button>
+            <button class="tg excOnly" data-bind="pnorm">각 곡선 정규화</button>
+          </div>
+        </div>
+        <div class="cvwrap">
+          <canvas id="cvProfile"></canvas>
+          <div class="plotbadge" id="badgeProfile" style="display:none"></div>
+        </div>
+      </section>
+
+      <section class="card" id="cardIV">
+        <div class="cardhead">
+          <h2>J–V 특성</h2>
+          <div class="toggles">
+            <span class="seg">
+              <button data-ivy="lin">linear</button>
+              <button data-ivy="log">semi-log |J|</button>
+            </span>
+            <button class="tg" data-bind="ivdecomp">J<sub>n</sub>/J<sub>p</sub> 분해</button>
+            <button class="tg" data-bind="ivslope">기울기 보조선</button>
+            <button class="tg" data-bind="rs">R<sub>s</sub></button>
+            <button class="tg" data-bind="gen">생성전류</button>
+          </div>
+        </div>
+        <div class="cvwrap">
+          <canvas id="cvIV"></canvas>
+          <div class="plotbadge" id="badgeIV" style="display:none"></div>
+        </div>
+        <div class="j0line" id="j0line"></div>
+      </section>
+
+    </div>
+  </div>
+  <pre id="selftest"></pre>
 </div>
 <script>
 "use strict";
@@ -671,8 +764,481 @@ function runSelfTests(verbose) {
 }
 /* SELFTEST-END */
 
-/* stage 1: show the physics self-test result on screen */
-document.getElementById('selftest').textContent = runSelfTests(false).text;
+/* ==========================================================================
+   UI LAYER 1 - state, URL, sliders, readout, banners
+   ========================================================================== */
+var UM = 1e-4;                       /* 1 um expressed in cm */
+function $(id) { return document.getElementById(id); }
+function el(tag, cls, html) {
+  var e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (html !== undefined) e.innerHTML = html;
+  return e;
+}
+
+/* ---------------- number formatting (HTML, no MathJax) ---------------- */
+var SUP = { '-': '−', '0': '0', '1': '1', '2': '2', '3': '3', '4': '4',
+            '5': '5', '6': '6', '7': '7', '8': '8', '9': '9' };
+function fmtE(x, d) {
+  if (x === 0) return '0';
+  if (!isFinite(x)) return '—';
+  d = (d === undefined) ? 2 : d;
+  var sg = x < 0 ? '−' : '';
+  x = Math.abs(x);
+  var ex = Math.floor(Math.log10(x)), m = x / Math.pow(10, ex);
+  if (m >= 10 - 0.5 * Math.pow(10, -d)) { m /= 10; ex++; }
+  return sg + m.toFixed(d) + '×10<sup>' + String(ex).replace('-', '−') + '</sup>';
+}
+function fmtG(x, s) {                       /* significant digits, plain */
+  if (!isFinite(x)) return '—';
+  s = s || 3;
+  var a = Math.abs(x);
+  if (a !== 0 && (a >= 1e5 || a < 1e-3)) return fmtE(x, s - 1);
+  var d = Math.max(0, s - 1 - (a === 0 ? 0 : Math.floor(Math.log10(a))));
+  return (x < 0 ? '−' : '') + a.toFixed(Math.min(d, 6));
+}
+function fmtLen(cm) {                       /* cm -> nm / um / mm */
+  var um = cm * 1e4;
+  if (!isFinite(um)) return '—';
+  if (Math.abs(um) < 0.1) return fmtG(um * 1000) + ' nm';
+  if (Math.abs(um) < 1000) return fmtG(um) + ' µm';
+  return fmtG(um / 1000) + ' mm';
+}
+function fmtTime(s) {                       /* s -> ps / ns / us / ms */
+  if (!isFinite(s)) return '—';
+  var a = Math.abs(s);                      /* thresholds sit just below the */
+  if (a < 999.5e-12) return fmtG(s * 1e12) + ' ps';   /* next unit so that a */
+  if (a < 999.5e-9)  return fmtG(s * 1e9) + ' ns';    /* rounded 1000 becomes */
+  if (a < 999.5e-6)  return fmtG(s * 1e6) + ' µs';    /* 1.00 of that unit    */
+  return fmtG(s * 1e3) + ' ms';
+}
+
+/* ---------------- state ---------------- */
+/* lengths held in um, lifetimes in ns - converted to cm/s for the engine */
+var DEF = {
+  Na: 5e17, Nd: 2e16, Va: 0, Wp: 300, Wn: 300, T: 300,
+  rs: true, gen: false,
+  ovrTau: false, tau_n: 10, tau_p: 300,
+  ovrD: false, Dn: 8.8, Dp: 9.4,
+  ovrL: false, Ln: 3, Lp: 17,
+  pmode: 'log', pnorm: false, yfix: false,
+  ivy: 'log', ivdecomp: false, ivslope: true
+};
+var S = {};
+for (var _k in DEF) S[_k] = DEF[_k];
+
+var PRESETS = {
+  /* the lecture slide uses *measured* lifetimes, so tau is pinned by hand */
+  lecture: { Na: 5e17, Nd: 2e16, Wp: 300, Wn: 300, T: 300, Va: 0, rs: true, gen: false,
+             ovrTau: true, tau_n: 10, tau_p: 300, ovrD: false, ovrL: false,
+             pmode: 'log', ivy: 'log' },
+  long:    { Na: 5e17, Nd: 2e16, Wp: 500, Wn: 500, T: 300, Va: 0.5, rs: true,
+             ovrTau: false, ovrD: false, ovrL: false, pmode: 'exc', pnorm: false, yfix: false },
+  short:   { Na: 5e17, Nd: 2e16, Wp: 1, Wn: 1, T: 300, Va: 0.5, rs: true,
+             ovrTau: false, ovrD: false, ovrL: false, pmode: 'exc', pnorm: false, yfix: false },
+  high:    { Na: 1e17, Nd: 1e15, Wp: 300, Wn: 300, T: 300, Va: 0.6, rs: true, gen: false,
+             ovrTau: false, ovrD: false, ovrL: false, pmode: 'log', ivy: 'log', ivslope: true }
+};
+
+function applyPreset(name) {
+  var p = PRESETS[name];
+  if (!p) return;
+  for (var k in DEF) S[k] = DEF[k];          /* start from the defaults */
+  for (var j in p) S[j] = p[j];
+  syncControls(); pushURL(); recompute();
+}
+
+/* ---------------- URL state ---------------- */
+var URLKEYS = { Na: 'na', Nd: 'nd', Va: 'va', Wp: 'wp', Wn: 'wn', T: 't',
+  rs: 'rs', gen: 'gen', ovrTau: 'ot', tau_n: 'tn', tau_p: 'tp',
+  ovrD: 'od', Dn: 'dn', Dp: 'dp', ovrL: 'ol', Ln: 'ln', Lp: 'lp',
+  pmode: 'pm', pnorm: 'pnm', yfix: 'yf', ivy: 'ivy', ivdecomp: 'dec', ivslope: 'slp' };
+var EMBED = false, ONLY = '';
+
+function readURL() {
+  var q = {}, s = location.search.replace(/^\?/, '');
+  if (s) s.split('&').forEach(function (kv) {
+    var i = kv.indexOf('='); if (i < 0) return;
+    q[decodeURIComponent(kv.slice(0, i))] = decodeURIComponent(kv.slice(i + 1));
+  });
+  EMBED = q.embed === '1';
+  ONLY = (q.plot === 'profile' || q.plot === 'iv') ? q.plot : '';
+  for (var k in URLKEYS) {
+    var v = q[URLKEYS[k]];
+    if (v === undefined) continue;
+    if (typeof DEF[k] === 'boolean') S[k] = (v === '1' || v === 'true');
+    else if (typeof DEF[k] === 'number') { var f = parseFloat(v); if (isFinite(f)) S[k] = f; }
+    else S[k] = v;
+  }
+  return q;
+}
+function buildURL() {
+  var parts = [], k;
+  for (k in URLKEYS) {
+    var v = S[k];
+    if (typeof v === 'boolean') v = v ? '1' : '0';
+    else if (typeof v === 'number') v = parseFloat(v.toPrecision(6)) + '';
+    parts.push(URLKEYS[k] + '=' + encodeURIComponent(v));
+  }
+  if (EMBED) parts.push('embed=1');
+  if (ONLY) parts.push('plot=' + ONLY);
+  return location.origin + location.pathname + '?' + parts.join('&');
+}
+function pushURL() {
+  try { history.replaceState(null, '', buildURL()); } catch (e) { /* file:// */ }
+}
+
+/* ---------------- slider factory ---------------- */
+var PPD = 200;                        /* range-input positions per decade */
+var SLDEF = {
+  Na: { nm: 'N<sub>a</sub>', ds: 'p측 억셉터', min: 1e14, max: 1e19, log: 1, fmt: 'e', u: 'cm<sup>−3</sup>' },
+  Nd: { nm: 'N<sub>d</sub>', ds: 'n측 도너', min: 1e14, max: 1e19, log: 1, fmt: 'e', u: 'cm<sup>−3</sup>' },
+  Wp: { nm: 'W<sub>p</sub>', ds: 'p 준중성 폭', min: 0.1, max: 500, log: 1, fmt: 'g', u: 'µm' },
+  Wn: { nm: 'W<sub>n</sub>', ds: 'n 준중성 폭', min: 0.1, max: 500, log: 1, fmt: 'g', u: 'µm' },
+  Va: { nm: 'V<sub>a</sub>', ds: '인가전압', min: -2, max: 1, step: 0.005, fmt: 'f3', u: 'V' },
+  T:  { nm: 'T', ds: '온도', min: 250, max: 400, step: 1, fmt: 'f0', u: 'K' },
+  tau_n: { nm: 'τ<sub>n</sub>', ds: 'p영역 전자', min: 0.1, max: 1e4, log: 1, fmt: 'g', u: 'ns' },
+  tau_p: { nm: 'τ<sub>p</sub>', ds: 'n영역 정공', min: 0.1, max: 1e4, log: 1, fmt: 'g', u: 'ns' },
+  Dn: { nm: 'D<sub>n</sub>', ds: '', min: 0.1, max: 40, log: 1, fmt: 'g', u: 'cm<sup>2</sup>/s' },
+  Dp: { nm: 'D<sub>p</sub>', ds: '', min: 0.1, max: 40, log: 1, fmt: 'g', u: 'cm<sup>2</sup>/s' },
+  Ln: { nm: 'L<sub>n</sub>', ds: '', min: 0.05, max: 500, log: 1, fmt: 'g', u: 'µm' },
+  Lp: { nm: 'L<sub>p</sub>', ds: '', min: 0.05, max: 500, log: 1, fmt: 'g', u: 'µm' }
+};
+var SL = {};                          /* key -> {input, valEl, def} */
+
+function slFmt(k, v) {
+  var d = SLDEF[k];
+  if (d.fmt === 'e') return fmtE(v, 2);
+  if (d.fmt === 'f3') return (v >= 0 ? '+' : '−') + Math.abs(v).toFixed(3);
+  if (d.fmt === 'f0') return v.toFixed(0);
+  return fmtG(v, 3);
+}
+function posOf(k, v) {
+  var d = SLDEF[k];
+  return d.log ? Math.round(Math.log10(v / d.min) * PPD) : v;
+}
+function valOf(k, p) {
+  var d = SLDEF[k];
+  if (!d.log) return Math.round(p / d.step) * d.step;
+  var v = d.min * Math.pow(10, p / PPD);
+  return parseFloat(v.toPrecision(4));
+}
+function mkSlider(host, key, opts) {
+  var d = SLDEF[key], w = el('div', 'sl');
+  var lab = el('div', 'lab');
+  lab.innerHTML = '<span class="nm">' + d.nm + '</span>' +
+                  (d.ds ? '<span style="font-size:13.5px;color:#5c6a7c">' + d.ds + '</span>' : '') +
+                  '<span class="val"></span>';
+  var row = el('div', 'row');
+  var bm = el('button', 'step', '−'), bp = el('button', 'step', '+');
+  var inp = document.createElement('input');
+  inp.type = 'range';
+  if (d.log) { inp.min = 0; inp.max = Math.round(Math.log10(d.max / d.min) * PPD); inp.step = 1; }
+  else { inp.min = d.min; inp.max = d.max; inp.step = d.step; }
+  bm.title = '한 단계 내리기'; bp.title = '한 단계 올리기';
+  row.appendChild(bm); row.appendChild(inp); row.appendChild(bp);
+  w.appendChild(lab); w.appendChild(row); host.appendChild(w);
+
+  var valEl = lab.querySelector('.val');
+  var rec = { input: inp, valEl: valEl, def: d, unit: d.u };
+  SL[key] = rec;
+
+  function commit(v) {
+    v = Math.min(d.log ? d.max : parseFloat(inp.max), Math.max(d.log ? d.min : parseFloat(inp.min), v));
+    S[key] = v; showVal(key); pushURL(); recompute();
+  }
+  inp.addEventListener('input', function () { commit(valOf(key, parseFloat(inp.value))); });
+  function bump(dir) {
+    var st = d.log ? 10 : 1;
+    var p = parseFloat(inp.value) + dir * st * (d.log ? 1 : d.step);
+    p = Math.min(parseFloat(inp.max), Math.max(parseFloat(inp.min), p));
+    inp.value = p; commit(valOf(key, p));
+  }
+  bm.addEventListener('click', function () { bump(-1); });
+  bp.addEventListener('click', function () { bump(+1); });
+  if (opts && opts.reset) {
+    var rb = el('button', 'reset', '자동값');
+    rb.title = '자동 계산값으로 되돌리기';
+    rb.addEventListener('click', function () { opts.reset(key); });
+    lab.insertBefore(rb, valEl);
+  }
+  return rec;
+}
+function showVal(key) {
+  var r = SL[key]; if (!r) return;
+  r.valEl.innerHTML = slFmt(key, S[key]) + ' <span style="color:#5c6a7c">' + r.unit + '</span>';
+  r.input.value = posOf(key, S[key]);
+}
+
+/* ---------------- generic bound toggles ---------------- */
+var BINDS = {};
+function initBinds() {
+  Array.prototype.forEach.call(document.querySelectorAll('[data-bind]'), function (e) {
+    var k = e.getAttribute('data-bind');
+    (BINDS[k] = BINDS[k] || []).push(e);
+    var h = function () {
+      S[k] = (e.tagName === 'INPUT') ? e.checked : !S[k];
+      syncControls(); pushURL(); recompute();
+    };
+    e.addEventListener(e.tagName === 'INPUT' ? 'change' : 'click', h);
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('[data-mode]'), function (e) {
+    e.addEventListener('click', function () {
+      S.pmode = e.getAttribute('data-mode'); syncControls(); pushURL(); recompute();
+    });
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('[data-ivy]'), function (e) {
+    e.addEventListener('click', function () {
+      S.ivy = e.getAttribute('data-ivy'); syncControls(); pushURL(); recompute();
+    });
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('[data-preset]'), function (e) {
+    e.addEventListener('click', function () { applyPreset(e.getAttribute('data-preset')); });
+  });
+}
+function syncControls() {
+  var k;
+  for (k in SL) showVal(k);
+  for (k in BINDS) BINDS[k].forEach(function (e) {
+    if (e.tagName === 'INPUT') e.checked = !!S[k];
+    else e.classList.toggle('on', !!S[k]);
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('[data-mode]'), function (e) {
+    e.classList.toggle('on', e.getAttribute('data-mode') === S.pmode);
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('[data-ivy]'), function (e) {
+    e.classList.toggle('on', e.getAttribute('data-ivy') === S.ivy);
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('.excOnly'), function (e) {
+    e.style.display = (S.pmode === 'exc') ? '' : 'none';
+  });
+  ['tau_n', 'tau_p'].forEach(function (k) { SL[k].input.parentNode.parentNode.style.opacity = S.ovrTau ? 1 : .45; });
+  ['Dn', 'Dp'].forEach(function (k) { SL[k].input.parentNode.parentNode.style.opacity = S.ovrD ? 1 : .45; });
+  ['Ln', 'Lp'].forEach(function (k) { SL[k].input.parentNode.parentNode.style.opacity = S.ovrL ? 1 : .45; });
+}
+
+/* ---------------- engine input ---------------- */
+function phyParams(over) {
+  var p = {
+    Na: S.Na, Nd: S.Nd, Va: S.Va, Wp: S.Wp * UM, Wn: S.Wn * UM, T: S.T,
+    rs: S.rs, gen: S.gen,
+    ovrTau: S.ovrTau, tau_n: S.tau_n * 1e-9, tau_p: S.tau_p * 1e-9,
+    ovrD: S.ovrD, Dn: S.Dn, Dp: S.Dp,
+    ovrL: S.ovrL, Ln: S.Ln * UM, Lp: S.Lp * UM
+  };
+  if (over) for (var k in over) p[k] = over[k];
+  return p;
+}
+
+/* ---------------- readout ---------------- */
+var TAU_TIP = '수명은 도핑에서 자동으로 계산됩니다 (Scharfetter SRH + Auger). ' +
+  '강의 슬라이드의 tau_n=10 ns / tau_p=300 ns 는 특정 시료의 측정값이라 ' +
+  '일반 모델값과 다릅니다 - 오류가 아닙니다. 슬라이드 숫자를 재현하려면 ' +
+  '"강의 예제" 프리셋(= tau 오버라이드 ON)을 쓰세요.';
+var J0_TIP = 'J0 는 저준위 주입 포화 전류밀도입니다. coth(W/L) 기하 인자를 포함하므로 ' +
+  'long base(W>>L)에서는 q ni^2 [Dp/(Lp Nd) + Dn/(Ln Na)] 로, ' +
+  'short base(W<<L)에서는 q ni^2 [Dp/(Nd Wn) + Dn/(Na Wp)] 로 자동으로 환원됩니다.';
+var R_TIP = '주입비 r = max( dpn(0)/n_n0 , dnp(0)/p_p0 ). ' +
+  'r < 0.1 저준위 주입, 0.1~1 전이, r >= 1 고준위 주입.';
+
+var ROWS = [
+  { g: '수송 파라미터' },
+  { k: 'µ<sub>n</sub>(N<sub>a</sub>)', f: function (m) { return fmtG(m.base.mun_min) + ' cm<sup>2</sup>/V·s'; } },
+  { k: 'µ<sub>p</sub>(N<sub>d</sub>)', f: function (m) { return fmtG(m.base.mup_min) + ' cm<sup>2</sup>/V·s'; } },
+  { k: 'τ<sub>n</sub> <span class="help" title="' + TAU_TIP + '">ⓘ</span>',
+    f: function (m) { return fmtTime(m.base.tau_n) + (S.ovrTau ? '<span class="tag b">수동</span>' : ''); } },
+  { k: 'τ<sub>p</sub>', f: function (m) { return fmtTime(m.base.tau_p) + (S.ovrTau ? '<span class="tag b">수동</span>' : ''); } },
+  { k: 'D<sub>n</sub>', f: function (m) { return fmtG(m.base.Dn) + ' cm<sup>2</sup>/s' + (S.ovrD ? '<span class="tag b">수동</span>' : ''); } },
+  { k: 'D<sub>p</sub>', f: function (m) { return fmtG(m.base.Dp) + ' cm<sup>2</sup>/s' + (S.ovrD ? '<span class="tag b">수동</span>' : ''); } },
+  { k: 'L<sub>n</sub>', f: function (m) { return fmtLen(m.base.Ln) + (S.ovrL ? '<span class="tag b">수동</span>' : ''); } },
+  { k: 'L<sub>p</sub>', f: function (m) { return fmtLen(m.base.Lp) + (S.ovrL ? '<span class="tag b">수동</span>' : ''); } },
+  { g: '기하' },
+  { k: 'W<sub>n</sub>/L<sub>p</sub>', f: function (m) { return fmtG(m.base.uN) + baseTag(m.base.uN); } },
+  { k: 'W<sub>p</sub>/L<sub>n</sub>', f: function (m) { return fmtG(m.base.uP) + baseTag(m.base.uP); } },
+  { g: '평형' },
+  { k: 'n<sub>p0</sub>', f: function (m) { return fmtE(m.base.np0) + ' cm<sup>−3</sup>'; } },
+  { k: 'p<sub>n0</sub>', f: function (m) { return fmtE(m.base.pn0) + ' cm<sup>−3</sup>'; } },
+  { k: 'n<sub>i</sub>(T)', f: function (m) { return fmtE(m.base.ni) + ' cm<sup>−3</sup>'; } },
+  { k: 'V<sub>bi</sub>', f: function (m) { return m.base.Vbi.toFixed(4) + ' V'; } },
+  { g: '공핍층' },
+  { k: 'W', f: function (m) { return fmtLen(m.W); } },
+  { k: 'x<sub>n</sub>', f: function (m) { return fmtLen(m.xn); } },
+  { k: 'x<sub>p</sub>', f: function (m) { return fmtLen(m.xp); } },
+  { g: '동작점' },
+  { k: 'R<sub>s</sub>·A', f: function (m) { return fmtG(m.base.RsA) + ' Ω·cm<sup>2</sup>'; } },
+  { k: 'V<sub>j</sub>', f: function (m) { return m.Vj.toFixed(4) + ' V' + (S.rs ? '' : '<span class="tag n">= V<sub>a</sub></span>'); } },
+  { k: '주입비 r <span class="help" title="' + R_TIP + '">ⓘ</span>',
+    f: function (m) { return (m.r > 0 ? fmtE(m.r) : (m.r === 0 ? '0' : '−' + fmtE(-m.r))) + injTag(m.r); } },
+  { k: 'J<sub>0</sub> <span class="help" title="' + J0_TIP + '">ⓘ</span>',
+    f: function (m) { return fmtE(m.base.J0) + ' A/cm<sup>2</sup>'; } },
+  { k: 'J', f: function (m) { return fmtE(m.J) + ' A/cm<sup>2</sup>'; } },
+  { k: 'J<sub>n</sub> : J<sub>p</sub>', f: function (m) {
+      var t = Math.abs(m.Jn) + Math.abs(m.Jp);
+      if (!(t > 0)) return '—';
+      return (100 * Math.abs(m.Jn) / t).toFixed(1) + '% : ' + (100 * Math.abs(m.Jp) / t).toFixed(1) + '%';
+    } }
+];
+function baseTag(u) {
+  if (u > 5) return '<span class="tag g">Long base</span>';
+  if (u < 0.2) return '<span class="tag b">Short base</span>';
+  return '<span class="tag y">Intermediate</span>';
+}
+function injTag(r) {
+  if (r < 0.1) return '<span class="tag g">저준입</span>';
+  if (r < 1) return '<span class="tag y">전이</span>';
+  return '<span class="tag r">고준입</span>';
+}
+var ROWCELLS = [];
+function buildReadout() {
+  var t = el('table', 'ro'), tb = document.createElement('tbody');
+  ROWS.forEach(function (r, i) {
+    var tr = document.createElement('tr');
+    if (r.g) {
+      tr.className = 'sep';
+      var td = el('td', 'k', '<b style="color:#5c6a7c">' + r.g + '</b>');
+      td.colSpan = 2; tr.appendChild(td); ROWCELLS[i] = null;
+    } else {
+      tr.appendChild(el('td', 'k', r.k));
+      var v = el('td', 'v', ''); tr.appendChild(v); ROWCELLS[i] = v;
+    }
+    tb.appendChild(tr);
+  });
+  t.appendChild(tb); $('readout').appendChild(t);
+}
+function updateReadout(m) {
+  ROWS.forEach(function (r, i) { if (ROWCELLS[i]) ROWCELLS[i].innerHTML = r.f(m); });
+}
+
+/* ---------------- warning banners ---------------- */
+function updateBanners(m) {
+  var b = $('banners'), out = [];
+  if (m.depletionBroken)
+    out.push(['bad', '공핍 근사 붕괴',
+      'V<sub>j</sub> = ' + m.Vj.toFixed(3) + ' V 가 V<sub>bi</sub> − 3V<sub>t</sub> = ' +
+      (m.base.Vbi - 3 * m.base.vt).toFixed(3) + ' V 이상입니다. 공핍층 폭과 경계조건을 신뢰할 수 없습니다.']);
+  if (S.Na >= 1e19 || S.Nd >= 1e19)
+    out.push(['warn', '축퇴 반도체',
+      '도핑이 10<sup>19</sup> cm<sup>−3</sup> 이상입니다. 볼츠만 근사와 완전 이온화 가정이 무너지고 밴드갭 축소도 무시할 수 없습니다.']);
+  if (m.r >= 1)
+    out.push(['warn', '고준위 주입',
+      '주입비 r = ' + fmtE(m.r) + ' ≥ 1. 경계값은 정확해로 계산되지만 <b>분포 형상과 확산거리는 저준위 근사</b>로 남아 있습니다.']);
+  else if (m.r >= 0.1)
+    out.push(['info', '전이 구간',
+      '주입비 r = ' + fmtE(m.r) + '. 저준위 주입 가정이 흔들리기 시작합니다 (0.1 ≤ r < 1).']);
+  if (!m.converged)
+    out.push(['bad', '수치 해 미수렴', 'Newton 반복이 60회 내에 수렴하지 않았습니다.']);
+  b.innerHTML = '';
+  out.forEach(function (o) {
+    b.appendChild(el('div', 'banner ' + o[0], '<b>' + o[1] + '</b><span class="why">' + o[2] + '</span>'));
+  });
+}
+
+/* ==========================================================================
+   BOOT
+   ========================================================================== */
+var MODEL = null;
+
+function recompute() {
+  MODEL = PHY.solve(phyParams());
+  updateReadout(MODEL);
+  updateBanners(MODEL);
+  var bp = $('badgeProfile');
+  if (MODEL.r >= 1) {
+    bp.style.display = ''; bp.innerHTML = '저준위 주입 가정 위배 — 분포 형상은 근사';
+  } else bp.style.display = 'none';
+  $('j0line').innerHTML =
+    '<span>J<sub>0</sub> = <b>' + fmtE(MODEL.base.J0, 3) + '</b> A/cm<sup>2</sup></span>' +
+    '<span>J(V<sub>a</sub>=' + S.Va.toFixed(3) + ') = <b>' + fmtE(MODEL.J, 3) + '</b> A/cm<sup>2</sup></span>' +
+    '<span style="color:#5c6a7c">V<sub>j</sub> = ' + MODEL.Vj.toFixed(4) + ' V · ' +
+    'J<sub>n</sub> = ' + fmtE(MODEL.Jn, 2) + ' · J<sub>p</sub> = ' + fmtE(MODEL.Jp, 2) + '</span>';
+  if (typeof drawAll === 'function') drawAll();
+}
+
+function autoValue(key) {                 /* what the model would produce */
+  if (key === 'tau_n') return PHY.build(phyParams({ ovrTau: false })).tau_n * 1e9;
+  if (key === 'tau_p') return PHY.build(phyParams({ ovrTau: false })).tau_p * 1e9;
+  if (key === 'Dn') return PHY.build(phyParams({ ovrD: false })).Dn;
+  if (key === 'Dp') return PHY.build(phyParams({ ovrD: false })).Dp;
+  if (key === 'Ln') return PHY.build(phyParams({ ovrL: false })).Ln / UM;
+  if (key === 'Lp') return PHY.build(phyParams({ ovrL: false })).Lp / UM;
+  return S[key];
+}
+function resetToAuto(key) {
+  var d = SLDEF[key];
+  S[key] = Math.min(d.max, Math.max(d.min, autoValue(key)));
+  showVal(key); pushURL(); recompute();
+}
+
+function copyLink() {
+  var url = buildURL();
+  var done = function (ok) {
+    var b = $('btnLink'), old = b.textContent;
+    b.textContent = ok ? '복사됨 ✓' : '복사 실패';
+    setTimeout(function () { b.textContent = old; }, 1500);
+  };
+  try {
+    var ta = document.createElement('textarea');
+    ta.value = url; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    var ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    if (ok) { done(true); return; }
+  } catch (e) { /* fall through */ }
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(url).then(function () { done(true); }, function () { window.prompt('아래 주소를 복사하세요', url); });
+  } else window.prompt('아래 주소를 복사하세요', url);
+}
+
+function boot() {
+  var q = readURL();
+
+  mkSlider($('slDevice'), 'Na'); mkSlider($('slDevice'), 'Nd');
+  mkSlider($('slDevice'), 'Wp'); mkSlider($('slDevice'), 'Wn');
+  mkSlider($('slBias'), 'Va');  mkSlider($('slBias'), 'T');
+  var R = { reset: resetToAuto };
+  mkSlider($('slTau'), 'tau_n', R); mkSlider($('slTau'), 'tau_p', R);
+  mkSlider($('slD'), 'Dn', R);      mkSlider($('slD'), 'Dp', R);
+  mkSlider($('slL'), 'Ln', R);      mkSlider($('slL'), 'Lp', R);
+
+  buildReadout();
+  initBinds();
+
+  $('ovHead').addEventListener('click', function () {
+    var b = $('ovBody'), open = b.classList.toggle('open');
+    $('ovHead').querySelector('.car').textContent = open ? '▼' : '▶';
+  });
+  $('btnLink').addEventListener('click', copyLink);
+  $('btnTest').addEventListener('click', function () {
+    var p = $('selftest');
+    if (p.classList.contains('show')) { p.classList.remove('show'); return; }
+    p.textContent = runSelfTests(false).text + '\n\n(다시 누르면 닫힙니다)';
+    p.classList.add('show');
+    p.addEventListener('click', function () { p.classList.remove('show'); }, { once: true });
+  });
+
+  if (EMBED) document.body.classList.add('embed');
+  if (ONLY) {
+    document.body.classList.add('single');
+    $(ONLY === 'iv' ? 'cardProfile' : 'cardIV').style.display = 'none';
+  }
+  if (S.ovrTau || S.ovrD || S.ovrL) {
+    $('ovBody').classList.add('open');
+    $('ovHead').querySelector('.car').textContent = '▼';
+  }
+
+  syncControls();
+  recompute();
+  if (q.test === '1') $('btnTest').click();
+
+  var redraw = function () { if (typeof drawAll === 'function') drawAll(); };
+  window.addEventListener('resize', redraw);
+  if (window.ResizeObserver) {
+    var ro = new ResizeObserver(redraw);
+    ro.observe($('plots'));
+  }
+}
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+else boot();
 </script>
 </body>
 </html>
