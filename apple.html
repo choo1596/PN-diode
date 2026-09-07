@@ -759,15 +759,28 @@ var COL = {
   ring: '#ffffff', haloBase: '255,255,255'
 };
 var FONTS = 'Arial, Helvetica, sans-serif';
+var COMPACT = false;          /* the small 4:3 build turns this on */
 var LW = 3.0;                       /* curve thickness (>= 2.5 px required) */
 var FS = 15;                        /* axis label size (>= 15 px required)  */
 
+/* how much annotation a panel of this size can carry:
+   2 = everything, 1 = drop secondary captions, 0 = curves and values only */
+function labelTier(w, h) {
+  if (!COMPACT) return 2;
+  if (w < 520 || h < 125) return 0;
+  if (w < 720 || h < 185) return 1;
+  return 2;
+}
 function fitCanvas(cv) {
   var r = cv.getBoundingClientRect();
   var dpr = window.devicePixelRatio || 1;
   var w = Math.max(60, Math.round(r.width)), h = Math.max(60, Math.round(r.height));
   if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) {
     cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+  }
+  if (COMPACT) {                       /* type and stroke follow the box */
+    FS = Math.max(10.5, Math.min(15, w / 52));
+    LW = Math.max(2.2, Math.min(3.0, w / 300));
   }
   var ctx = cv.getContext('2d');
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -1029,8 +1042,13 @@ function drawIV() {
   if (ONLY === 'profile') return;
   var f = fitCanvas(cv), ctx = f.ctx, w = f.w, h = f.h;
   var m = MODEL; if (!m) return;
-  var box = { l: 74, r: w - 18, t: 44, b: h - 62 };
-  if (box.r - box.l < 80 || box.b - box.t < 80) return;
+  var T = labelTier(w - 70, h - 60);
+  var box = COMPACT
+    ? { l: Math.round(T > 1 ? FS * 4.6 : FS * 3.6), r: w - 12,
+        t: Math.round(FS * (T > 1 ? 2.0 : 1.3)),
+        b: h - Math.round(FS * (T > 0 ? 3.3 : 1.8)) }
+    : { l: 74, r: w - 18, t: 44, b: h - 62 };
+  if (box.r - box.l < 70 || box.b - box.t < (COMPACT ? 34 : 55)) return;
 
   var Jat = function (v) { return m.Js * (Math.exp(Math.min(v / PHY.VT, 500)) - 1); };
   /* the y axis follows the operating point, so the exponential knee and the
@@ -1040,7 +1058,10 @@ function drawIV() {
   var xa = Ax(false, IV_V0, IV_V1, box.l, box.r);
   var ya = Ax(false, lo, hi, box.b, box.t);
 
-  drawFrame(ctx, box, xa, ya, { xlabel: '인가전압  V_a  [V]', ylabel: 'J  [A/cm²]', xn: 5, yn: 5 });
+  drawFrame(ctx, box, xa, ya, {
+    xlabel: T > 0 ? '인가전압  V_a  [V]' : '', ylabel: T > 1 ? 'J  [A/cm²]' : '',
+    xn: T > 0 ? 5 : 4, yn: T > 1 ? 5 : 3
+  });
 
   /* zero line */
   ctx.strokeStyle = COL.zero; ctx.lineWidth = 1.5;
@@ -1059,7 +1080,10 @@ function drawIV() {
      which is exactly the point of the figure                            */
   var yJs = ya.t(-m.Js);
   dashLine(ctx, box.l, yJs, box.r, yJs, COL.muted2, [5, 4], 1.4);
-  drawSub(ctx, '−J_s = ' + fmtGc(m.Js, 2) + ' A/cm²', box.l + 8, yJs + FS + 4,
+  /* the caption sits under the line, or above it when the line is near the floor */
+  var lowRoom = (box.b - yJs) < FS * 1.8;
+  drawSub(ctx, '−J_s' + (T > 0 ? (' = ' + fmtGc(m.Js, 2) + ' A/cm²') : ''),
+          box.l + 8, yJs + (lowRoom ? -5 : FS + 4),
           { align: 'left', size: FS - 2, bold: 1, col: COL.muted2, halo: 0.9 });
 
   /* operating point */
@@ -1069,18 +1093,22 @@ function drawIV() {
   dashLine(ctx, px, box.b, px, py, COL.point, [4, 4], 1.4);
   dot(ctx, px, py, 8, COL.point);
   ctx.restore();
-  drawSub(ctx, 'V_a = ' + m.Va.toFixed(3) + ' V,  J = ' + fmtGc(m.J, 3) + ' A/cm²',
-          box.r - 4, box.t - 10, { align: 'right', size: FS - 1, bold: 1, col: COL.point });
+  drawSub(ctx, 'V_a = ' + m.Va.toFixed(3) + ' V' + (T > 0 ? (',  J = ' + fmtGc(m.J, 3) + ' A/cm²') : ''),
+          box.r - 4, box.t - (COMPACT ? 5 : 10), { align: 'right', size: FS - 1, bold: 1, col: COL.point });
 
   /* equation + bias direction labels */
-  drawSub(ctx, 'J = J_s·(e^{eVa/kT} − 1)', box.l + 8, box.t + FS + 6,
-          { align: 'left', size: FS + 2, bold: 1, col: COL.ivCurve, halo: 0.9 });
-  drawSub(ctx, '← Reverse Bias', box.l + 8, box.b - 7,
-          { align: 'left', size: FS - 2, col: COL.dim, halo: 0.9 });
-  drawSub(ctx, 'Forward Bias →', box.r - 8, box.b - 7,
-          { align: 'right', size: FS - 2, col: COL.dim, halo: 0.9 });
-  drawSub(ctx, 'y축은 현재 동작점에 맞춰 자동 확대', box.l + 8, box.t + FS * 2.5 + 4,
-          { align: 'left', size: FS - 3, col: COL.dim2, halo: 0.9 });
+  if (T > 1) {
+    drawSub(ctx, 'J = J_s·(e^{eVa/kT} − 1)', box.l + 8, box.t + FS + 6,
+            { align: 'left', size: FS + 2, bold: 1, col: COL.ivCurve, halo: 0.9 });
+    drawSub(ctx, 'y축은 현재 동작점에 맞춰 자동 확대', box.l + 8, box.t + FS * 2.5 + 4,
+            { align: 'left', size: FS - 3, col: COL.dim2, halo: 0.9 });
+  }
+  if (T > 0) {
+    drawSub(ctx, '← Reverse Bias', box.l + 8, box.b - 7,
+            { align: 'left', size: FS - 2, col: COL.dim, halo: 0.9 });
+    drawSub(ctx, 'Forward Bias →', box.r - 8, box.b - 7,
+            { align: 'right', size: FS - 2, col: COL.dim, halo: 0.9 });
+  }
 }
 
 /* click / drag anywhere on the J-V plot moves Va (mouse only operation) */
@@ -1088,7 +1116,7 @@ function initIVMouse() {
   var cv = $('cvIV'), down = false;
   var set = function (ev) {
     var r = cv.getBoundingClientRect();
-    var l = 74, rr = r.width - 18;
+    var l = COMPACT ? Math.round(FS * 4.0) : 74, rr = r.width - (COMPACT ? 12 : 18);
     var fr = (ev.clientX - r.left - l) / Math.max(1, rr - l);
     var v = IV_V0 + (IV_V1 - IV_V0) * Math.min(1, Math.max(0, fr));
     v = parseFloat((Math.round(v / 0.005) * 0.005).toFixed(3));
@@ -1177,22 +1205,31 @@ function drawMain() {
   var f = fitCanvas(cv), ctx = f.ctx, w = f.w, h = f.h;
   var m = MODEL; if (!m) return;
 
-  var L = 46, R = w - 46;   /* room for the x" / x' axis captions */
-  if (R - L < 120 || h < 220) return;
+  var M = COMPACT ? Math.max(26, Math.round(FS * 2.4)) : 46;
+  var L = M, R = w - M;   /* room for the x" / x' axis captions */
+  if (R - L < 120 || h < (COMPACT ? 130 : 220)) return;
   var X = xLayout(m, L, R);
 
-  var aTop = 30, aBot = Math.round(h * 0.50);
-  var bTop = aBot + 74, bBot = h - 26;
-  if (bBot - bTop < 60) { bTop = aBot + 52; bBot = h - 14; }
+  var aTop = COMPACT ? Math.round(FS * 1.6) : 30;
+  var aBot = Math.round(h * (COMPACT ? 0.55 : 0.50));
+  var Tm = labelTier(R - L, aBot - aTop);
+  var gap  = COMPACT ? Math.round(FS * (Tm > 1 ? 3.5 : 2.7)) : 74;
+  var bTop = aBot + gap, bBot = h - (COMPACT ? Math.round(FS * 1.5) : 26);
+  if (bBot - bTop < 52) { bTop = aBot + Math.round(gap * 0.7); bBot = h - 12; }
+
+  /* if the current-density strip cannot be read, drop it and give the whole
+     canvas to the carrier profile rather than drawing two unusable panels  */
+  var showJ = (bBot - bTop) >= 44;
+  if (!showJ) aBot = h - Math.round(FS * 2.9);
 
   drawProfilePanel(ctx, m, X, aTop, aBot);
-  drawCurrentPanel(ctx, m, X, bTop, bBot);
+  if (showJ) drawCurrentPanel(ctx, m, X, bTop, bBot);
 }
 
 /* ======================= panel A : carrier profile ======================= */
 function drawProfilePanel(ctx, m, X, top, bot) {
-  var X0 = X;
-  var band = 34;                        /* reserved strip for p_p0 / n_n0 */
+  var X0 = X, T = labelTier(X.r - X.l, bot - top);
+  var band = T > 0 ? (T > 1 ? 34 : 26) : 8;   /* strip for p_p0 / n_n0 */
   var cTop = top + band + 10, cBot = bot;
   /* one linear scale per side, as the lecture figure draws two "n, p" axes */
   var yMaxP = Math.max(m.npE, m.np0 * 2.2) * 1.12;
@@ -1224,21 +1261,24 @@ function drawProfilePanel(ctx, m, X, top, bot) {
   [X.cxL, X.cxR].forEach(function (cx) {
     arrowLine(ctx, cx, bot, cx, top - 8, COL.axis, 1.6);
   });
-  drawSub(ctx, 'n, p', (X.cxL + X.cxR) / 2, top - 12, { align: 'center', size: FS, bold: 1, col: COL.axisLab });
+  if (T > 1) drawSub(ctx, 'n, p', (X.cxL + X.cxR) / 2, top - 12,
+                     { align: 'center', size: FS, bold: 1, col: COL.axisLab });
 
   /* --- majority reference lines in the top strip (way off scale) --- */
   var hiIsNa = m.Na >= m.Nd;
-  var yHi = top + 11, yLo = top + 27;
+  var yHi = top + (T > 1 ? 11 : 9), yLo = top + (T > 1 ? 27 : 21);
+  if (T > 0) {
   dashLine(ctx, X.l, hiIsNa ? yHi : yLo, X.cxL, hiIsNa ? yHi : yLo, COL.hole, [6, 4], 1.8);
   dashLine(ctx, X.cxR, hiIsNa ? yLo : yHi, X.r, hiIsNa ? yLo : yHi, COL.elec, [6, 4], 1.8);
-  haloText(ctx, 'p_{p0} = ' + fmtEc(m.Na, 1) + '  (축척 밖)', X.l + 6,
-           (hiIsNa ? yHi : yLo) - 4, COL.hole, 'left', FS - 3, true);
-  haloText(ctx, 'n_{n0} = ' + fmtEc(m.Nd, 1) + '  (축척 밖)', X.r - 6,
-           (hiIsNa ? yLo : yHi) - 4, COL.elec, 'right', FS - 3, true);
+  var mjP = T > 1 ? ('p_{p0} = ' + fmtEc(m.Na, 1) + '  (축척 밖)') : 'p_{p0}';
+  var mjN = T > 1 ? ('n_{n0} = ' + fmtEc(m.Nd, 1) + '  (축척 밖)') : 'n_{n0}';
+  haloText(ctx, mjP, X.l + 6, (hiIsNa ? yHi : yLo) - 4, COL.hole, 'left', FS - 3, true);
+  haloText(ctx, mjN, X.r - 6, (hiIsNa ? yLo : yHi) - 4, COL.elec, 'right', FS - 3, true);
   ctx.save();                                   /* axis break */
   ctx.strokeStyle = COL.brk; ctx.lineWidth = 1.3; ctx.setLineDash([3, 4]);
   ctx.beginPath(); ctx.moveTo(X.l, top + band + 2); ctx.lineTo(X.r, top + band + 2); ctx.stroke();
   ctx.restore();
+  }
 
   /* --- equilibrium levels --- */
   dashLine(ctx, X.l, yP(m.np0), X.cxL, yP(m.np0), COL.elec, [4, 4], 1.6);
@@ -1259,6 +1299,7 @@ function drawProfilePanel(ctx, m, X, top, bot) {
          short base.  That is the slide's dn_p/dx formula, drawn.        --- */
   var tan = function (side) {
     var isP = side === 'p';
+    var TT = T;
     var lam = isP ? m.lamP : m.lamN;
     var y0 = isP ? yP(m.npE) : yN(m.pnE);
     var y1 = isP ? yP(m.np0) : yN(m.pn0);
@@ -1268,14 +1309,17 @@ function drawProfilePanel(ctx, m, X, top, bot) {
     ctx.beginPath(); ctx.arc(x1, y1, 4, 0, 6.2832);
     ctx.fillStyle = COL.tangent; ctx.fill();
     var u = isP ? m.uP : m.uN, nm = isP ? 'L_n' : 'L_p', wn = isP ? 'W_p' : 'W_n';
-    var lab = (u > 5 ? ('λ = ' + nm) : (u < 0.2 ? ('λ = ' + wn) : 'λ')) + ' = ' + fmtLenC(lam);
+    if (T < 1) return;
+    var lab = (u > 5 ? ('λ = ' + nm) : (u < 0.2 ? ('λ = ' + wn) : 'λ')) + (T > 1 ? (' = ' + fmtLenC(lam)) : '');
     var tw = measSub(ctx, lab, FS - 2, 1);
     var lx = x1 + (isP ? -9 : 9);
     lx = Math.max(X0.l + 4 + (isP ? tw : 0), Math.min(X0.r - 4 - (isP ? 0 : tw), lx));
     haloText(ctx, lab, lx, y1 - 8, COL.tangent, isP ? 'right' : 'left', FS - 2, true);
-    var sl = isP ? 'dn_p/dx″' : 'dp_n/dx′';
-    haloText(ctx, sl, (x0 + x1) / 2 + (isP ? -6 : 6), (y0 + y1) / 2 - 8, COL.tangent,
-             isP ? 'right' : 'left', FS - 2, true);
+    if (T > 1) {
+      var sl = isP ? 'dn_p/dx″' : 'dp_n/dx′';
+      haloText(ctx, sl, (x0 + x1) / 2 + (isP ? -6 : 6), (y0 + y1) / 2 - 8, COL.tangent,
+               isP ? 'right' : 'left', FS - 2, true);
+    }
   };
   tan('p'); tan('n');
 
@@ -1284,8 +1328,10 @@ function drawProfilePanel(ctx, m, X, top, bot) {
   dot(ctx, X.cxR, yN(m.pnE), 7, COL.hole);
   haloText(ctx, 'n_p(0) = ' + fmtGc(m.npE, 3), X.cxL - 11, yP(m.npE) - 9, COL.elec, 'right', FS - 2, true);
   haloText(ctx, 'p_n(0) = ' + fmtGc(m.pnE, 3), X.cxR + 11, yN(m.pnE) - 9, COL.hole, 'left', FS - 2, true);
-  haloText(ctx, 'n_{p0}', X.l + (X.cxL - X.l) * 0.30, yP(m.np0) + FS + 3, COL.elec, 'center', FS - 2);
-  haloText(ctx, 'p_{n0}', X.r - (X.r - X.cxR) * 0.30, yN(m.pn0) + FS + 3, COL.hole, 'center', FS - 2);
+  if (T > 0) {
+    haloText(ctx, 'n_{p0}', X.l + (X.cxL - X.l) * 0.30, yP(m.np0) + FS + 3, COL.elec, 'center', FS - 2);
+    haloText(ctx, 'p_{n0}', X.r - (X.r - X.cxR) * 0.30, yN(m.pn0) + FS + 3, COL.hole, 'center', FS - 2);
+  }
 
   /* --- carrier flow arrows (they reverse with the bias) --- */
   if (Math.abs(m.Va) > 0.02) {
@@ -1293,8 +1339,10 @@ function drawProfilePanel(ctx, m, X, top, bot) {
     var xe = X.cxL - X.half * 0.30, xh = X.cxR + X.half * 0.30;
     arrowLine(ctx, xe + (fwd ? d : -d), ay, xe + (fwd ? -d : d), ay, COL.elec, 2.2);
     arrowLine(ctx, xh + (fwd ? -d : d), ay, xh + (fwd ? d : -d), ay, COL.hole, 2.2);
-    haloText(ctx, '전자', xe, ay - 10, COL.elec, 'center', FS - 2, true);
-    haloText(ctx, '정공', xh, ay - 10, COL.hole, 'center', FS - 2, true);
+    if (T > 1) {
+      haloText(ctx, '전자', xe, ay - 10, COL.elec, 'center', FS - 2, true);
+      haloText(ctx, '정공', xh, ay - 10, COL.hole, 'center', FS - 2, true);
+    }
   }
 
   /* --- x axis annotation --- */
@@ -1304,16 +1352,26 @@ function drawProfilePanel(ctx, m, X, top, bot) {
     if (txt) drawSub(ctx, txt, px, bot + 8 + FS, { align: 'center', size: FS - 1, col: col || COL.text });
   };
   tickV(X.l, ''); tickV(X.cxL, 'x″=0'); tickV(X.cxR, 'x′=0'); tickV(X.r, '');
-  drawSub(ctx, 'x″', X.l - 17, bot + 8 + FS, { align: 'right', size: FS, bold: 1 });
-  drawSub(ctx, 'x′', X.r + 17, bot + 8 + FS, { align: 'left', size: FS, bold: 1 });
-  drawSub(ctx, 'W_p = ' + fmtGc(m.Wp * 1e4, 3) + ' µm · ' + baseWord(m.uP),
-          (X.l + X.cxL) / 2, bot + 8 + FS * 2.2, { align: 'center', size: FS - 1, col: COL.elec, bold: 1 });
-  drawSub(ctx, 'W_n = ' + fmtGc(m.Wn * 1e4, 3) + ' µm · ' + baseWord(m.uN),
-          (X.cxR + X.r) / 2, bot + 8 + FS * 2.2, { align: 'center', size: FS - 1, col: COL.hole, bold: 1 });
+  if (T > 0) {
+    drawSub(ctx, 'x″', X.l - 17, bot + 8 + FS, { align: 'right', size: FS, bold: 1 });
+    drawSub(ctx, 'x′', X.r + 17, bot + 8 + FS, { align: 'left', size: FS, bold: 1 });
+    /* base type goes under the axis while there is a second row for it */
+    drawSub(ctx, (T > 1 ? 'W_p = ' + fmtGc(m.Wp * 1e4, 3) + ' µm · ' : '') + baseWord(m.uP),
+            (X.l + X.cxL) / 2, bot + 8 + FS * 2.2, { align: 'center', size: FS - 1, col: COL.elec, bold: 1 });
+    drawSub(ctx, (T > 1 ? 'W_n = ' + fmtGc(m.Wn * 1e4, 3) + ' µm · ' : '') + baseWord(m.uN),
+            (X.cxR + X.r) / 2, bot + 8 + FS * 2.2, { align: 'center', size: FS - 1, col: COL.hole, bold: 1 });
+  } else {
+    /* no second row down there - tuck it into the top corners instead */
+    drawSub(ctx, baseWord(m.uP), X.l + 4, top + FS + 1,
+            { align: 'left', size: FS - 1, col: COL.elec, bold: 1, halo: 0.9 });
+    drawSub(ctx, baseWord(m.uN), X.r - 4, top + FS + 1,
+            { align: 'right', size: FS - 1, col: COL.hole, bold: 1, halo: 0.9 });
+  }
 }
 
 /* ======================= panel B : current density ======================= */
 function drawCurrentPanel(ctx, m, X, top, bot) {
+  var T = labelTier(X.r - X.l, bot - top);
   var lo = Math.min(0, m.J * 1.3), hi = Math.max(0, m.J * 1.3);
   if (hi - lo < 1e-300) { lo = -1; hi = 1; }
   var y = function (v) { return bot - (v - lo) / (hi - lo) * (bot - top); };
@@ -1329,8 +1387,8 @@ function drawCurrentPanel(ctx, m, X, top, bot) {
   ctx.beginPath(); ctx.moveTo(X.l - 14, y(0) + .5); ctx.lineTo(X.r + 14, y(0) + .5); ctx.stroke();
   arrowHead(ctx, X.r + 14, y(0) + .5, 1, 0, COL.axis, 8);
   arrowLine(ctx, (X.cxL + X.cxR) / 2, bot, (X.cxL + X.cxR) / 2, top - 10, COL.axis, 1.6);
-  drawSub(ctx, 'Current density', (X.cxL + X.cxR) / 2, top - 15,
-          { align: 'center', size: FS - 1, bold: 1, col: COL.axisLab, halo: 0.9 });
+  if (T > 1) drawSub(ctx, 'Current density', (X.cxL + X.cxR) / 2, top - 15,
+                     { align: 'center', size: FS - 1, bold: 1, col: COL.axisLab, halo: 0.9 });
   drawSub(ctx, 'x', X.r + 18, y(0) + FS * 0.4, { align: 'left', size: FS, bold: 1 });
 
   /* J_n(x) and J_p(x) */
@@ -1357,21 +1415,26 @@ function drawCurrentPanel(ctx, m, X, top, bot) {
   dot(ctx, X.cxR, y(m.Jp), 6.5, COL.hole);
 
   /* labels straight from the lecture figure */
-  haloText(ctx, 'J_{Total} = J_n(−x_p) + J_p(x_n) = ' + fmtGc(m.J, 3) + ' A/cm²',
+  haloText(ctx, (T > 1 ? 'J_{Total} = J_n(−x_p) + J_p(x_n) = ' : 'J_{Total} = ') +
+           fmtGc(m.J, 3) + ' A/cm²',
            (X.l + X.r) / 2, top + FS - 2, COL.tot, 'center', FS - 2, true);
-  haloText(ctx, 'J_n(−x_p)', X.cxL - 10, y(m.Jn) - 9, COL.elec, 'right', FS - 2, true);
-  haloText(ctx, 'J_p(x_n)', X.cxR + 10, y(m.Jp) - 9, COL.hole, 'left', FS - 2, true);
+  if (T > 0) {
+    haloText(ctx, 'J_n(−x_p)', X.cxL - 10, y(m.Jn) - 9, COL.elec, 'right', FS - 2, true);
+    haloText(ctx, 'J_p(x_n)', X.cxR + 10, y(m.Jp) - 9, COL.hole, 'left', FS - 2, true);
+  }
   /* the two "= J_Total - X" curves approach J_Total from inside, so their
      captions go on the far side of the curve from the J_Total line        */
-  var xlp = m.Wp * 0.42, xln = m.Wn * 0.42;
-  var jnp = PHY.JnAt(m, xlp), jpn = PHY.JpAt(m, xln);
-  var oDiff = m.J >= 0 ? -9 : (FS + 7);        /* diffusion curves: outward */
-  var oComp = m.J >= 0 ? (FS + 7) : -9;        /* complement curves: inward */
-  haloText(ctx, 'J_n = eD_n·d(δn_p)/dx', X.p(xlp), y(jnp) + oDiff, COL.elec, 'center', FS - 3);
-  haloText(ctx, 'J_p = J_{Total} − J_n', X.p(xlp), y(m.J - jnp) + oComp, COL.hole, 'center', FS - 3);
-  haloText(ctx, 'J_p = −eD_p·d(δp_n)/dx', X.n(xln), y(jpn) + oDiff, COL.hole, 'center', FS - 3);
-  haloText(ctx, 'J_n = J_{Total} − J_p', X.n(xln), y(m.J - jpn) + oComp, COL.elec, 'center', FS - 3);
-  if (m.uP < 0.35 && m.uN < 0.35)
+  if (T > 1) {
+    var xlp = m.Wp * 0.42, xln = m.Wn * 0.42;
+    var jnp = PHY.JnAt(m, xlp), jpn = PHY.JpAt(m, xln);
+    var oDiff = m.J >= 0 ? -9 : (FS + 7);      /* diffusion curves: outward */
+    var oComp = m.J >= 0 ? (FS + 7) : -9;      /* complement curves: inward */
+    haloText(ctx, 'J_n = eD_n·d(δn_p)/dx', X.p(xlp), y(jnp) + oDiff, COL.elec, 'center', FS - 3);
+    haloText(ctx, 'J_p = J_{Total} − J_n', X.p(xlp), y(m.J - jnp) + oComp, COL.hole, 'center', FS - 3);
+    haloText(ctx, 'J_p = −eD_p·d(δp_n)/dx', X.n(xln), y(jpn) + oDiff, COL.hole, 'center', FS - 3);
+    haloText(ctx, 'J_n = J_{Total} − J_p', X.n(xln), y(m.J - jpn) + oComp, COL.elec, 'center', FS - 3);
+  }
+  if (T > 0 && m.uP < 0.35 && m.uN < 0.35)
     haloText(ctx, '중성영역 재결합 거의 없음 → J_n, J_p 각각 일정',
              (X.l + X.r) / 2, top + FS * 2.4, COL.muted, 'center', FS - 2, true);
   drawSub(ctx, 'p', X.l + 10, top + FS, { align: 'left', size: FS, bold: 1, col: COL.scrLab });
@@ -1489,6 +1552,7 @@ function boot() {
   }
 
   if (typeof initTheme === 'function') initTheme();
+  if (typeof initSkin === 'function') initSkin();
   syncControls();
   initIVMouse();
   recompute();

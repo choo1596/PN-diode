@@ -6,10 +6,17 @@
 
 **▶ 실행**
 
-| 버전 | 주소 | 특징 |
+| 버전 | 주소 | 쓰는 곳 |
 |---|---|---|
-| 기본 | https://choo1596.github.io/PN-diode/ | 강의실·프로젝터용. 진한 대비, 굵은 선 |
-| Apple 스타일 | https://choo1596.github.io/PN-diode/apple.html | 시스템 폰트(SF Pro), 세그먼트 컨트롤, iOS 슬라이더, 라이트/다크 |
+| 기본 | https://choo1596.github.io/PN-diode/ | 강의실·프로젝터. 진한 대비, 굵은 선 |
+| Apple 스타일 | https://choo1596.github.io/PN-diode/apple.html | 큰 화면에서 보기 좋게. 라이트/다크 |
+| 소형 (4:3) | https://choo1596.github.io/PN-diode/compact.html | **PowerPoint 삽입용.** 작아져도 안 깨짐 |
+
+`compact.html` 은 4:3 슬라이드에 넣는 용도입니다. 세로로 쌓는 배치라 그래프가 폭을
+다 쓰고, **패널이 작아지면 그리기 코드가 라벨을 스스로 줄입니다** (수식 주석 →
+값 표기 → 곡선만). 더 좁아지면 전류밀도 패널을 접어 프로파일에 높이를 넘기고,
+440 px 보다 낮으면 J–V 카드를 감춥니다. 어떤 크기에서도 빈 화면이 나오지 않도록
+10가지 크기 × 3가지 모드를 검사했습니다. 파라미터는 ⚙ 버튼으로 펼칩니다.
 
 두 버전은 **물리 엔진과 UI 로직이 완전히 같은 코드**이고 스킨만 다릅니다.
 `apple.html` 은 우측 상단 아이콘으로 라이트/다크를 바꿀 수 있으며 (기본 라이트,
@@ -113,11 +120,29 @@ J_Total   = J_n(−x_p) + J_p(x_n)  =  J_s·(e^{eVa/kT} − 1)
 ## 6. 저장소 구성
 
 ```
-index.html    기본 버전
-apple.html    Apple 스타일 버전 (라이트/다크)
+index.html     기본 버전
+apple.html     Apple 스타일 버전 (라이트/다크)
+compact.html   소형 4:3 버전 (PowerPoint 삽입용)
 README.md
 LICENSE
 ```
+
+세 버전 모두 **물리 엔진과 UI 로직이 같은 코드**이고 스킨만 다릅니다.
+
+### PowerPoint 에 넣기
+
+`?embed=1` 없이 그대로 쓰면 됩니다 (소형 버전은 이미 컴팩트합니다).
+
+```
+https://choo1596.github.io/PN-diode/compact.html?va=0.45&na=1e17&nd=1e16&wp=300&wn=300&ln=25&lp=25
+```
+
+- **Web Viewer 애드인** (제작자가 Microsoft Corporation 인 것이 무료) 에 위 주소를 넣습니다
+- 애드인을 쓰기 어렵다면 **삽입 → 화면 녹화** 로 슬라이더를 움직이는 장면을 찍어
+  슬라이드에 넣거나, 그림에 하이퍼링크를 걸고 브라우저를 앱 모드로 띄웁니다
+  (`msedge.exe --app="주소"`)
+- `?plot=profile` 또는 `?plot=iv` 로 한쪽 그래프만 전체 높이로 띄울 수 있습니다
+- 800×600 이상 크기를 권장합니다
 
 ## 7. 라이선스
 

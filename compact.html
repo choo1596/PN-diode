@@ -3,135 +3,186 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>pn 접합 다이오드 시뮬레이터</title>
+<title>pn 접합 다이오드 (소형)</title>
 <style>
+/* ==========================================================================
+   COMPACT build - made to sit inside a 4:3 PowerPoint slide.
+   Everything stacks vertically so the plots keep the full width, and the
+   canvas code thins its own annotation out as the panels get smaller.
+   ========================================================================== */
+:root{
+  --bg:#f5f5f7; --card:#fff; --tx:#1d1d1f; --tx2:#6e6e73; --tx3:#8e8e93;
+  --sep:rgba(0,0,0,.10); --hair:rgba(0,0,0,.07); --hover:rgba(0,0,0,.05);
+  --ac:#0071e3; --ac-soft:rgba(0,113,227,.12);
+  --track:#e6e6eb; --thumb:#fff;
+  --shadow:0 1px 2px rgba(0,0,0,.05), 0 4px 14px rgba(0,0,0,.06);
+  --seg:#ececf0; --segsel:#fff;
+  --warn-bg:rgba(255,149,0,.15); --warn-tx:#8a5100;
+  --ok-bg:rgba(52,199,89,.16); --ok-tx:#1c7d3e;
+  --wr-bg:rgba(255,149,0,.18); --wr-tx:#8a5100;
+}
 *{box-sizing:border-box}
 html,body{margin:0;padding:0;height:100%}
 body{
-  font:16px/1.45 Arial, Helvetica, sans-serif;
-  color:#16191d; background:#eef1f5; overflow:hidden;
-  -webkit-text-size-adjust:100%;
+  font:13px/1.4 -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, sans-serif;
+  letter-spacing:-.01em; color:var(--tx); background:var(--bg); overflow:hidden;
+  -webkit-font-smoothing:antialiased;
 }
-h1,h2{margin:0;font-weight:bold}
-button{font:inherit;font-size:15px;cursor:pointer}
+h2{margin:0;font-weight:600;font-size:13px;letter-spacing:-.015em}
+button{font:inherit;cursor:pointer;letter-spacing:inherit}
 
-#app{display:flex;flex-direction:column;height:100%;min-height:0}
+#app{display:flex;flex-direction:column;height:100%;min-height:0;padding:7px;gap:7px}
 
-/* ---------- header ---------- */
-#hdr{
-  flex:0 0 auto;display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;
-  padding:9px 14px;background:#1d2c44;color:#fff;
+/* ---------- header: preset chips ---------- */
+#hdr{flex:0 0 auto;display:flex;align-items:center;gap:6px;min-width:0}
+.seg{
+  display:flex;gap:2px;background:var(--seg);border-radius:9px;padding:2px;
+  overflow-x:auto;scrollbar-width:none;flex:1 1 auto;min-width:0;
 }
-#hdr h1{font-size:19px;letter-spacing:-.2px}
-#hdr .sub{font-size:14px;font-weight:normal;color:#a9bcd8;margin-left:8px}
-#presets{display:flex;flex-wrap:wrap;gap:7px;margin-left:auto}
-#presets button{
-  background:#31517d;color:#fff;border:1px solid #4a6da3;border-radius:6px;
-  padding:7px 12px;min-height:34px;
+.seg::-webkit-scrollbar{display:none}
+.seg button{
+  border:0;background:transparent;color:var(--tx);font-size:12px;font-weight:500;
+  padding:5px 9px;border-radius:7px;white-space:nowrap;min-height:26px;
+  transition:background .16s,box-shadow .16s;
 }
-#presets button:hover{background:#3e6499}
-#presets button.linkbtn{background:#0e1a2c;border-color:#3f5a82;color:#cfe0f8}
-#presets button.linkbtn:hover{background:#16263f}
+.seg button:hover{background:var(--hover)}
+.seg button.on{background:var(--segsel);box-shadow:0 1px 3px rgba(0,0,0,.13);font-weight:600}
+.iconbtn{
+  flex:0 0 auto;width:28px;height:28px;border:0;border-radius:8px;background:var(--seg);
+  color:var(--tx2);display:grid;place-items:center;font-size:14px;line-height:1;
+  transition:background .15s,color .15s;
+}
+.iconbtn:hover{background:var(--hover);color:var(--tx)}
+.iconbtn.on{background:var(--ac);color:#fff}
 
-/* ---------- note strip ---------- */
+/* ---------- note ---------- */
 #note{flex:0 0 auto}
 #note .n{
-  padding:7px 14px;font-size:14.5px;background:#fff3d6;color:#7a4a00;
-  border-bottom:1px solid rgba(0,0,0,.1);
+  background:var(--warn-bg);color:var(--warn-tx);border-radius:9px;
+  padding:6px 10px;font-size:12px;line-height:1.35;
 }
-#note .n b{margin-right:6px}
+#note .n b{font-weight:600;margin-right:4px}
 
-/* ---------- layout ---------- */
-#main{flex:1 1 auto;display:flex;min-height:0;gap:10px;padding:10px}
-#ctrl{
-  flex:0 0 300px;min-width:0;overflow-y:auto;overflow-x:hidden;
-  background:#fff;border:1px solid #ccd4de;border-radius:8px;padding:12px 13px 18px;
-}
-#plots{
-  flex:1 1 auto;min-width:0;display:grid;gap:10px;overflow:hidden;
-  grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);
-}
-body.single #plots{grid-template-columns:1fr}
+/* ---------- plots ---------- */
+#plots{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;gap:7px}
 .card{
-  background:#fff;border:1px solid #ccd4de;border-radius:8px;
-  display:flex;flex-direction:column;min-height:0;min-width:0;overflow:hidden;
+  background:var(--card);border-radius:12px;box-shadow:var(--shadow);
+  display:flex;flex-direction:column;min-height:0;overflow:hidden;
 }
+#cardMain{flex:1.95 1 0}
+#cardIV{flex:1 1 0}
+body.single .card{flex:1 1 0}
 .cardhead{
-  flex:0 0 auto;display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;
-  padding:7px 11px;border-bottom:1px solid #e2e7ee;background:#f7f9fc;
+  flex:0 0 auto;display:flex;align-items:baseline;gap:7px;
+  padding:6px 10px 5px;border-bottom:1px solid var(--hair);
 }
-.cardhead h2{font-size:16px;white-space:nowrap}
-.cardhead .hint{font-size:13.5px;color:#5c6a7c}
+.cardhead .hint{font-size:11px;color:var(--tx2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cvwrap{position:relative;flex:1 1 auto;min-height:0}
 canvas{display:block;width:100%;height:100%}
 
-/* ---------- sliders ---------- */
-.grouptitle{
-  font-size:13px;font-weight:bold;letter-spacing:.06em;color:#5c6a7c;
-  text-transform:uppercase;margin:0 0 7px;border-bottom:1px solid #e2e7ee;padding-bottom:4px;
+/* ---------- bias bar ---------- */
+#bias{
+  flex:0 0 auto;background:var(--card);border-radius:12px;box-shadow:var(--shadow);
+  padding:7px 12px 8px;
 }
-.group{margin-bottom:15px}
-.sl{margin-bottom:11px}
-.sl .lab{display:flex;align-items:baseline;gap:6px;font-size:15px;margin-bottom:1px}
-.sl .lab .nm{font-weight:bold}
-.sl .lab .ds{font-size:13.5px;color:#5c6a7c}
-.sl .lab .val{margin-left:auto;font-family:"Courier New",monospace;font-size:15px;color:#123a6b}
-.sl .row{display:flex;align-items:center;gap:4px}
+#bias .sl{margin:0}
+#bias .lab{display:flex;align-items:baseline;gap:6px;margin-bottom:1px}
+#bias .lab .nm{font-weight:600;font-size:13px}
+#bias .lab .ds{font-size:11px;color:var(--tx3)}
+#bias .lab .val{
+  margin-left:auto;font-size:16px;font-weight:600;color:var(--ac);
+  font-variant-numeric:tabular-nums;white-space:nowrap;
+}
+#bias .lab .val span{color:var(--tx3);font-weight:400;font-size:11px}
+
+/* ---------- collapsible settings ---------- */
+#more{
+  flex:0 0 auto;display:none;background:var(--card);border-radius:12px;
+  box-shadow:var(--shadow);padding:10px 12px;max-height:46vh;overflow-y:auto;
+}
+#more.open{display:block}
+.mgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px 14px}
+@media (max-width:620px){ .mgrid{grid-template-columns:repeat(2,minmax(0,1fr))} }
+.mtitle{font-size:11px;font-weight:600;color:var(--tx2);margin:8px 0 4px}
+.mtitle:first-child{margin-top:0}
+.sl{margin-bottom:4px}
+.sl .lab{display:flex;align-items:baseline;gap:5px;font-size:12px;margin-bottom:0}
+.sl .lab .nm{font-weight:600}
+.sl .lab .ds{font-size:10.5px;color:var(--tx3)}
+.sl .lab .val{
+  margin-left:auto;font-size:12px;font-weight:590;color:var(--ac);
+  font-variant-numeric:tabular-nums;white-space:nowrap;
+}
+.sl .lab .val span{color:var(--tx3);font-weight:400;font-size:10px}
+.sl .row{display:flex;align-items:center;gap:5px}
 .sl input[type=range]{flex:1 1 auto;min-width:0}
 .step{
-  flex:0 0 auto;width:28px;height:28px;line-height:1;padding:0;font-size:16px;
-  border:1px solid #b7c2d0;background:#fff;border-radius:5px;color:#2b3440;
+  flex:0 0 auto;width:22px;height:22px;border:0;border-radius:6px;background:var(--seg);
+  color:var(--tx2);font-size:13px;line-height:1;padding:0;display:grid;place-items:center;
 }
-.step:hover{background:#eef3fa}
+.step:hover{background:var(--hover);color:var(--tx)}
+
 input[type=range]{
-  -webkit-appearance:none;appearance:none;width:100%;height:28px;
-  background:transparent;cursor:pointer;margin:0;
+  -webkit-appearance:none;appearance:none;width:100%;height:24px;
+  background:transparent;cursor:pointer;margin:0;--p:50;
 }
 input[type=range]:focus{outline:none}
-input[type=range]::-webkit-slider-runnable-track{height:8px;background:#ccd6e2;border-radius:4px}
+input[type=range]::-webkit-slider-runnable-track{
+  height:4px;border-radius:2px;
+  background:linear-gradient(to right,var(--ac) 0 calc(var(--p)*1%),var(--track) calc(var(--p)*1%) 100%);
+}
 input[type=range]::-webkit-slider-thumb{
-  -webkit-appearance:none;width:24px;height:24px;margin-top:-8px;border-radius:50%;
-  background:#2b6cb0;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.35);
+  -webkit-appearance:none;width:18px;height:18px;margin-top:-7px;border-radius:50%;
+  background:var(--thumb);border:.5px solid rgba(0,0,0,.06);
+  box-shadow:0 1px 3px rgba(0,0,0,.2),0 2px 6px rgba(0,0,0,.1);
 }
-input[type=range]::-moz-range-track{height:8px;background:#ccd6e2;border-radius:4px}
+#bias input[type=range]{height:26px}
+#bias input[type=range]::-webkit-slider-thumb{width:22px;height:22px;margin-top:-9px}
+input[type=range]::-moz-range-track{height:4px;border-radius:2px;background:var(--track)}
+input[type=range]::-moz-range-progress{height:4px;border-radius:2px;background:var(--ac)}
 input[type=range]::-moz-range-thumb{
-  width:22px;height:22px;border-radius:50%;background:#2b6cb0;border:2px solid #fff;
-  box-shadow:0 1px 3px rgba(0,0,0,.35);
+  width:18px;height:18px;border-radius:50%;background:var(--thumb);
+  border:.5px solid rgba(0,0,0,.06);box-shadow:0 1px 3px rgba(0,0,0,.2);
 }
-#slBias input[type=range]::-webkit-slider-thumb{width:26px;height:26px;margin-top:-9px;background:#c8102e}
-#slBias input[type=range]::-moz-range-thumb{width:24px;height:24px;background:#c8102e}
 
 /* ---------- readout ---------- */
-table.ro{width:100%;border-collapse:collapse;font-size:14.5px}
-table.ro td{padding:2px 0;vertical-align:baseline}
-table.ro td.k{color:#4a5666;white-space:nowrap;padding-right:6px}
-table.ro td.v{text-align:right;font-family:"Courier New",monospace;color:#11294a;white-space:nowrap}
-.tag{
-  display:inline-block;font-family:Arial,Helvetica,sans-serif;font-size:12.5px;
-  font-weight:bold;border-radius:4px;padding:1px 6px;margin-left:5px;color:#fff;
-}
-.tag.g{background:#2e7d4f}.tag.y{background:#b8860b}.tag.b{background:#2b6cb0}
+table.ro{width:100%;border-collapse:collapse;font-size:11.5px}
+table.ro td{padding:3px 0;border-top:1px solid var(--hair)}
+table.ro tr:first-child td{border-top:0}
+table.ro td.k{color:var(--tx2);white-space:nowrap;padding-right:6px}
+table.ro td.v{text-align:right;font-weight:590;white-space:nowrap;font-variant-numeric:tabular-nums}
+.tag{display:inline-block;font-size:10px;font-weight:600;border-radius:5px;padding:1px 5px;margin-left:4px}
+.tag.g{background:var(--ok-bg);color:var(--ok-tx)}
+.tag.y{background:var(--wr-bg);color:var(--wr-tx)}
+.tag.b{background:var(--ac-soft);color:var(--ac)}
 
 #selftest{
   display:none;position:absolute;inset:0;z-index:50;overflow:auto;margin:0;
-  background:#101820;color:#d7e3f0;font:13px/1.4 "Courier New",monospace;padding:14px;
-  white-space:pre-wrap;
+  background:var(--card);color:var(--tx);padding:14px;white-space:pre-wrap;
+  font:11px/1.45 ui-monospace,Menlo,Consolas,monospace;
 }
 #selftest.show{display:block}
 
-body.embed #hdr h1,body.embed #hdr .sub{display:none}
-body.embed #hdr{padding:6px 10px}
-body.embed #presets{margin-left:0}
-
-@media (max-width:900px){
-  body{overflow:auto}
-  #app{height:auto;min-height:100%}
-  #main{flex-direction:column}
-  #ctrl{flex:0 0 auto;width:auto;overflow:visible;order:2}
-  #plots{grid-template-columns:1fr;overflow:visible;order:1}
-  .card{height:min(70vh,520px)}
-  #hdr h1{font-size:17px}
-  #presets{margin-left:0}
+/* short embeds: give the plots every pixel we can spare */
+@media (max-height:560px){
+  #app{padding:5px;gap:5px}
+  .cardhead{padding:4px 9px 3px}
+  .cardhead .hint{display:none}
+  #bias{padding:5px 10px 6px}
+  #bias .lab .val{font-size:15px}
+  .seg button{padding:4px 8px;min-height:24px}
+  .iconbtn{width:25px;height:25px}
+}
+/* below this the J-V panel cannot carry an axis - fold it away and let the
+   carrier profile use the whole frame (?plot=iv still shows it full height) */
+@media (max-height:440px){
+  body:not(.single) #cardIV{display:none}
+}
+@media (max-height:430px){
+  #bias .lab{margin-bottom:-2px}
+  #bias .lab .val{font-size:13px}
+  #bias input[type=range]{height:22px}
+  #bias input[type=range]::-webkit-slider-thumb{width:19px;height:19px;margin-top:-7.5px}
 }
 </style>
 </head>
@@ -139,62 +190,45 @@ body.embed #presets{margin-left:0}
 <div id="app">
 
   <div id="hdr">
-    <h1>pn 접합 다이오드<span class="sub">소수캐리어 분포 · 전류밀도 · J–V</span></h1>
-    <div id="presets">
-      <button data-preset="long">Long base</button>
-      <button data-preset="inter">Intermediate</button>
-      <button data-preset="short">Short base</button>
-      <button data-preset="mixed">p:short / n:long</button>
+    <div class="seg" id="presets">
+      <button data-preset="long">Long</button>
+      <button data-preset="inter">Inter</button>
+      <button data-preset="short">Short</button>
+      <button data-preset="mixed">p:S / n:L</button>
       <button data-preset="rev">역방향</button>
-      <button class="linkbtn" id="btnLink" title="현재 상태가 담긴 주소를 복사합니다">링크 복사</button>
     </div>
+    <button class="iconbtn" id="btnMore" title="파라미터 · 계산값">⚙</button>
+    <button class="iconbtn" id="btnLink" title="현재 상태 주소 복사">🔗</button>
   </div>
 
   <div id="note"></div>
 
-  <div id="main">
-
-    <div id="ctrl">
-      <div class="group">
-        <div class="grouptitle">바이어스</div>
-        <div id="slBias"></div>
+  <div id="plots">
+    <section class="card" id="cardMain">
+      <div class="cardhead">
+        <h2>소수캐리어 분포 · 전류밀도</h2>
+        <span class="hint">SCR 경계 접선 기울기 = 전류</span>
       </div>
-      <div class="group">
-        <div class="grouptitle">중성영역 폭 W</div>
-        <div id="slW"></div>
+      <div class="cvwrap"><canvas id="cvMain"></canvas></div>
+    </section>
+    <section class="card" id="cardIV">
+      <div class="cardhead">
+        <h2>J–V</h2>
+        <span class="hint">J = J<sub>s</sub>(e<sup>eV<sub>a</sub>/kT</sup> − 1)</span>
       </div>
-      <div class="group">
-        <div class="grouptitle">확산거리 L</div>
-        <div id="slL"></div>
-      </div>
-      <div class="group">
-        <div class="grouptitle">도핑</div>
-        <div id="slDope"></div>
-      </div>
-      <div class="group">
-        <div class="grouptitle">계산값</div>
-        <div id="readout"></div>
-      </div>
-    </div>
-
-    <div id="plots">
-      <section class="card" id="cardMain">
-        <div class="cardhead">
-          <h2>소수캐리어 분포와 전류밀도</h2>
-          <span class="hint">SCR 경계의 <b>접선 기울기</b>가 전류를 결정합니다</span>
-        </div>
-        <div class="cvwrap"><canvas id="cvMain"></canvas></div>
-      </section>
-
-      <section class="card" id="cardIV">
-        <div class="cardhead">
-          <h2>J–V 특성</h2>
-          <span class="hint">J = J<sub>s</sub>·(e<sup>eV<sub>a</sub>/kT</sup> − 1)</span>
-        </div>
-        <div class="cvwrap"><canvas id="cvIV"></canvas></div>
-      </section>
-    </div>
+      <div class="cvwrap"><canvas id="cvIV"></canvas></div>
+    </section>
   </div>
+
+  <div id="bias"><div id="slBias"></div></div>
+
+  <div id="more">
+    <div class="mtitle">중성영역 폭 W · 확산거리 L</div>
+    <div class="mgrid"><div id="slW"></div><div id="slL"></div><div id="slDope"></div></div>
+    <div class="mtitle">계산값</div>
+    <div id="readout"></div>
+  </div>
+
   <pre id="selftest"></pre>
 </div>
 <script>
@@ -1358,6 +1392,22 @@ function strokePts(ctx, pts, col, w) {
   }
   ctx.stroke();
   ctx.restore();
+}
+
+/* ==========================================================================
+   COMPACT skin - turns on the adaptive annotation and wires the settings
+   drawer.  Everything else is the same engine as the other two builds.
+   ========================================================================== */
+COMPACT = true;
+
+function initSkin() {
+  var more = document.getElementById('more'), btn = document.getElementById('btnMore');
+  if (!btn) return;
+  btn.addEventListener('click', function () {
+    var open = more.classList.toggle('open');
+    btn.classList.toggle('on', open);
+    if (typeof drawAll === 'function') drawAll();     /* panels resized */
+  });
 }
 
 /* ========================================================================== */
