@@ -281,7 +281,6 @@ body.single #plots{grid-template-columns:1fr}
         </div>
         <div class="cvwrap">
           <canvas id="cvIV"></canvas>
-          <div class="plotbadge" id="badgeIV" style="display:none"></div>
         </div>
         <div class="j0line" id="j0line"></div>
       </section>
@@ -797,6 +796,11 @@ function fmtG(x, s) {                       /* significant digits, plain */
   var d = Math.max(0, s - 1 - (a === 0 ? 0 : Math.floor(Math.log10(a))));
   return (x < 0 ? '−' : '') + a.toFixed(Math.min(d, 6));
 }
+function fmtR(r) {                          /* injection ratio */
+  if (r === 0) return '0';
+  var a = Math.abs(r);
+  return (a >= 1e-3 && a < 1e4) ? fmtG(r, 3) : fmtE(r, 2);
+}
 function fmtLen(cm) {                       /* cm -> nm / um / mm */
   var um = cm * 1e4;
   if (!isFinite(um)) return '—';
@@ -1068,7 +1072,7 @@ var ROWS = [
   { k: 'R<sub>s</sub>·A', f: function (m) { return fmtG(m.base.RsA) + ' Ω·cm<sup>2</sup>'; } },
   { k: 'V<sub>j</sub>', f: function (m) { return m.Vj.toFixed(4) + ' V' + (S.rs ? '' : '<span class="tag n">= V<sub>a</sub></span>'); } },
   { k: '주입비 r <span class="help" title="' + R_TIP + '">ⓘ</span>',
-    f: function (m) { return (m.r > 0 ? fmtE(m.r) : (m.r === 0 ? '0' : '−' + fmtE(-m.r))) + injTag(m.r); } },
+    f: function (m) { return fmtR(m.r) + injTag(m.r); } },
   { k: 'J<sub>0</sub> <span class="help" title="' + J0_TIP + '">ⓘ</span>',
     f: function (m) { return fmtE(m.base.J0) + ' A/cm<sup>2</sup>'; } },
   { k: 'J', f: function (m) { return fmtE(m.J) + ' A/cm<sup>2</sup>'; } },
@@ -1121,15 +1125,468 @@ function updateBanners(m) {
       '도핑이 10<sup>19</sup> cm<sup>−3</sup> 이상입니다. 볼츠만 근사와 완전 이온화 가정이 무너지고 밴드갭 축소도 무시할 수 없습니다.']);
   if (m.r >= 1)
     out.push(['warn', '고준위 주입',
-      '주입비 r = ' + fmtE(m.r) + ' ≥ 1. 경계값은 정확해로 계산되지만 <b>분포 형상과 확산거리는 저준위 근사</b>로 남아 있습니다.']);
+      '주입비 r = ' + fmtR(m.r) + ' ≥ 1. 경계값은 정확해로 계산되지만 <b>분포 형상과 확산거리는 저준위 근사</b>로 남아 있습니다.']);
   else if (m.r >= 0.1)
     out.push(['info', '전이 구간',
-      '주입비 r = ' + fmtE(m.r) + '. 저준위 주입 가정이 흔들리기 시작합니다 (0.1 ≤ r < 1).']);
+      '주입비 r = ' + fmtR(m.r) + '. 저준위 주입 가정이 흔들리기 시작합니다 (0.1 ≤ r < 1).']);
   if (!m.converged)
     out.push(['bad', '수치 해 미수렴', 'Newton 반복이 60회 내에 수렴하지 않았습니다.']);
   b.innerHTML = '';
   out.forEach(function (o) {
     b.appendChild(el('div', 'banner ' + o[0], '<b>' + o[1] + '</b><span class="why">' + o[2] + '</span>'));
+  });
+}
+
+/* ==========================================================================
+   PLOT PLUMBING - canvas 2D only, no external library
+   axis rule: x ticks point outward, y ticks point inward, no top/right ticks
+   ========================================================================== */
+var COL = {
+  elec: '#1f5fd0', elecFill: 'rgba(31,95,208,.13)',
+  hole: '#d02020', holeFill: 'rgba(208,32,32,.12)',
+  tot:  '#16213e', rev: '#6b7a8f',
+  eq:   '#8a94a3', scr: 'rgba(120,132,150,.16)',
+  hi:   'rgba(208,32,32,.075)', tr: 'rgba(190,150,20,.09)',
+  axis: '#33404f', grid: '#e6eaf0', guide: '#9aa6b4', text: '#22303f'
+};
+var LW = 3.0;                       /* curve thickness (>= 2.5 px required) */
+var FS = 15;                        /* axis label size (>= 15 px required)  */
+
+function fitCanvas(cv) {
+  var r = cv.getBoundingClientRect();
+  var dpr = window.devicePixelRatio || 1;
+  var w = Math.max(60, Math.round(r.width)), h = Math.max(60, Math.round(r.height));
+  if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) {
+    cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+  }
+  var ctx = cv.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  ctx.font = FS + 'px Arial, Helvetica, sans-serif';
+  ctx.textBaseline = 'alphabetic';
+  return { ctx: ctx, w: w, h: h };
+}
+
+/* value <-> pixel mapping */
+function Ax(log, lo, hi, p0, p1) {
+  var a = log ? Math.log10(lo) : lo, b = log ? Math.log10(hi) : hi;
+  if (!(b > a)) b = a + 1;
+  return {
+    log: log, lo: lo, hi: hi, a: a, b: b, p0: p0, p1: p1,
+    t: function (v) {
+      var x = log ? Math.log10(v) : v;
+      return p0 + (x - a) / (b - a) * (p1 - p0);
+    },
+    inv: function (px) {
+      var x = a + (px - p0) / (p1 - p0) * (b - a);
+      return log ? Math.pow(10, x) : x;
+    }
+  };
+}
+function linTicks(lo, hi, target) {
+  var span = hi - lo; if (!(span > 0)) return [lo];
+  var raw = span / (target || 6), mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  var n = raw / mag, step = mag * (n < 1.5 ? 1 : n < 3 ? 2 : n < 7 ? 5 : 10);
+  var out = [], v;
+  for (v = Math.ceil(lo / step - 1e-9) * step; v <= hi + step * 1e-6; v += step)
+    out.push(Math.abs(v) < step * 1e-9 ? 0 : v);
+  return out;
+}
+function logTicks(lo, hi) {
+  var a = Math.floor(Math.log10(lo) + 1e-9), b = Math.ceil(Math.log10(hi) - 1e-9);
+  var nd = Math.max(1, b - a);
+  var stride = nd <= 10 ? 1 : nd <= 20 ? 2 : nd <= 32 ? 3 : Math.ceil(nd / 11);
+  var out = [], e;
+  for (e = Math.ceil(a / stride) * stride; e <= b + 1e-9; e += stride) out.push(e);
+  return out;
+}
+/* "10^k" drawn with a real raised exponent (no web font, no MathJax) */
+function drawPow10(ctx, x, y, ex, align) {
+  var base = '10', s = String(ex).replace('-', '−');
+  var f = ctx.font, big = FS + 'px Arial, Helvetica, sans-serif';
+  var sml = Math.round(FS * 0.74) + 'px Arial, Helvetica, sans-serif';
+  ctx.font = big; var wb = ctx.measureText(base).width;
+  ctx.font = sml; var ws = ctx.measureText(s).width;
+  var x0 = align === 'right' ? x - (wb + ws) : align === 'center' ? x - (wb + ws) / 2 : x;
+  var al = ctx.textAlign; ctx.textAlign = 'left';   /* x0 is a left edge */
+  ctx.font = big; ctx.fillText(base, x0, y);
+  ctx.font = sml; ctx.fillText(s, x0 + wb, y - FS * 0.42);
+  ctx.font = f; ctx.textAlign = al;
+  return wb + ws;
+}
+function fmtTick(v, step) {
+  if (v === 0) return '0';
+  var d = Math.max(0, -Math.floor(Math.log10(Math.abs(step))));
+  if (Math.abs(v) >= 1e5 || Math.abs(v) < 1e-4) return v.toExponential(0).replace('-', '−');
+  return v.toFixed(Math.min(d, 4)).replace('-', '−');
+}
+
+/* frame + ticks + titles.  box = {l,r,t,b} in css pixels */
+function drawFrame(ctx, box, xa, ya, o) {
+  o = o || {};
+  var i, v, px, py;
+  ctx.save();
+
+  /* grid */
+  ctx.strokeStyle = COL.grid; ctx.lineWidth = 1;
+  var xt = xa.log ? logTicks(xa.lo, xa.hi) : linTicks(xa.lo, xa.hi, o.xn || 6);
+  var yt = ya.log ? logTicks(ya.lo, ya.hi) : linTicks(ya.lo, ya.hi, o.yn || 6);
+  if (o.grid !== false) {
+    ctx.beginPath();
+    for (i = 0; i < xt.length; i++) {
+      px = Math.round(xa.t(xa.log ? Math.pow(10, xt[i]) : xt[i])) + .5;
+      if (px > box.l && px < box.r) { ctx.moveTo(px, box.t); ctx.lineTo(px, box.b); }
+    }
+    for (i = 0; i < yt.length; i++) {
+      py = Math.round(ya.t(ya.log ? Math.pow(10, yt[i]) : yt[i])) + .5;
+      if (py > box.t && py < box.b) { ctx.moveTo(box.l, py); ctx.lineTo(box.r, py); }
+    }
+    ctx.stroke();
+  }
+
+  /* axis lines: left and bottom only */
+  ctx.strokeStyle = COL.axis; ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  ctx.moveTo(box.l + .5, box.t); ctx.lineTo(box.l + .5, box.b + .5); ctx.lineTo(box.r, box.b + .5);
+  ctx.stroke();
+
+  ctx.fillStyle = COL.text;
+  ctx.font = FS + 'px Arial, Helvetica, sans-serif';
+
+  /* x ticks: outward, labels below */
+  ctx.textAlign = 'center'; ctx.lineWidth = 1.6;
+  var xstep = xt.length > 1 ? (xt[1] - xt[0]) : 1;
+  ctx.beginPath();
+  for (i = 0; i < xt.length; i++) {
+    v = xa.log ? Math.pow(10, xt[i]) : xt[i];
+    px = Math.round(xa.t(v)) + .5;
+    if (px < box.l - 1 || px > box.r + 1) continue;
+    ctx.moveTo(px, box.b); ctx.lineTo(px, box.b + 7);
+    if (xa.log) drawPow10(ctx, px, box.b + 7 + FS, xt[i], 'center');
+    else ctx.fillText(fmtTick(v, xstep), px, box.b + 7 + FS);
+  }
+  ctx.stroke();
+
+  /* y ticks: inward, labels outside on the left */
+  ctx.textAlign = 'right';
+  var ystep = yt.length > 1 ? (yt[1] - yt[0]) : 1;
+  ctx.beginPath();
+  for (i = 0; i < yt.length; i++) {
+    v = ya.log ? Math.pow(10, yt[i]) : yt[i];
+    py = Math.round(ya.t(v)) + .5;
+    if (py < box.t - 1 || py > box.b + 1) continue;
+    ctx.moveTo(box.l, py); ctx.lineTo(box.l + 7, py);
+    if (ya.log) drawPow10(ctx, box.l - 6, py + FS * 0.36, yt[i], 'right');
+    else ctx.fillText(fmtTick(v, ystep), box.l - 6, py + FS * 0.36);
+  }
+  ctx.stroke();
+
+  /* titles */
+  ctx.fillStyle = COL.text;
+  ctx.font = 'bold ' + (FS + 1) + 'px Arial, Helvetica, sans-serif';
+  if (o.xlabel) { ctx.textAlign = 'center'; ctx.fillText(o.xlabel, (box.l + box.r) / 2, box.b + 7 + FS * 2.2); }
+  if (o.ylabel) {
+    ctx.save(); ctx.translate(14, (box.t + box.b) / 2); ctx.rotate(-Math.PI / 2);
+    ctx.textAlign = 'center'; ctx.fillText(o.ylabel, 0, 0); ctx.restore();
+  }
+  ctx.restore();
+}
+
+/* polyline with clipping to the plot box; pts = [[x,y],...] in data units   */
+function poly(ctx, box, xa, ya, pts, style) {
+  if (pts.length < 2) return;
+  ctx.save();
+  ctx.beginPath(); ctx.rect(box.l, box.t, box.r - box.l, box.b - box.t); ctx.clip();
+  ctx.lineWidth = style.w || LW;
+  ctx.strokeStyle = style.c;
+  ctx.setLineDash(style.d || []);
+  ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  ctx.beginPath();
+  var started = false, i, px, py;
+  for (i = 0; i < pts.length; i++) {
+    var vx = pts[i][0], vy = pts[i][1];
+    if (!isFinite(vx) || !isFinite(vy) || (ya.log && !(vy > 0)) || (xa.log && !(vx > 0))) { started = false; continue; }
+    px = xa.t(vx); py = ya.t(vy);
+    if (!isFinite(px) || !isFinite(py)) { started = false; continue; }
+    py = Math.max(box.t - 5000, Math.min(box.b + 5000, py));
+    if (!started) { ctx.moveTo(px, py); started = true; } else ctx.lineTo(px, py);
+  }
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
+}
+function dot(ctx, x, y, r, fill, ring) {
+  ctx.beginPath(); ctx.arc(x, y, r, 0, 6.2832);
+  ctx.fillStyle = fill; ctx.fill();
+  ctx.lineWidth = 2; ctx.strokeStyle = ring || '#fff'; ctx.stroke();
+}
+function tagText(ctx, x, y, txt, fg, bg, align) {
+  ctx.font = 'bold ' + (FS - 1) + 'px Arial, Helvetica, sans-serif';
+  var w = ctx.measureText(txt).width + 10, h = FS + 8;
+  var x0 = align === 'right' ? x - w : align === 'center' ? x - w / 2 : x;
+  ctx.fillStyle = bg; ctx.fillRect(x0, y - h + 4, w, h);
+  ctx.fillStyle = fg; ctx.textAlign = 'left'; ctx.fillText(txt, x0 + 5, y);
+  return w;
+}
+/* small legend block */
+function legend(ctx, x, y, items) {
+  ctx.save();
+  ctx.font = (FS - 1) + 'px Arial, Helvetica, sans-serif';
+  var wmax = 0, i;
+  for (i = 0; i < items.length; i++) wmax = Math.max(wmax, ctx.measureText(items[i].t).width);
+  var w = wmax + 44, h = items.length * (FS + 6) + 8;
+  ctx.fillStyle = 'rgba(255,255,255,.86)'; ctx.strokeStyle = '#d6dde6'; ctx.lineWidth = 1;
+  ctx.fillRect(x, y, w, h); ctx.strokeRect(x + .5, y + .5, w, h);
+  for (i = 0; i < items.length; i++) {
+    var yy = y + 6 + (i + 0.5) * (FS + 6);
+    ctx.strokeStyle = items[i].c; ctx.lineWidth = items[i].w || 3;
+    ctx.setLineDash(items[i].d || []);
+    ctx.beginPath(); ctx.moveTo(x + 8, yy); ctx.lineTo(x + 34, yy); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = COL.text; ctx.textAlign = 'left';
+    ctx.fillText(items[i].t, x + 40, yy + FS * 0.35);
+  }
+  ctx.restore();
+  return h;
+}
+
+/* ==========================================================================
+   PLOT 2  -  J-V characteristic
+   ========================================================================== */
+var IV_N = 601, IV_V0 = -2, IV_V1 = 1;
+var ivCache = null, ivKeyPrev = '';
+
+function ivKey() {
+  return [S.Na, S.Nd, S.Wp, S.Wn, S.T, S.rs, S.gen, S.ovrTau, S.tau_n, S.tau_p,
+          S.ovrD, S.Dn, S.Dp, S.ovrL, S.Ln, S.Lp].join(',');
+}
+function ivData() {                    /* the sweep does not depend on Va */
+  var k = ivKey();
+  if (ivCache && k === ivKeyPrev) return ivCache;
+  var Vas = [], i;
+  for (i = 0; i < IV_N; i++) Vas.push(IV_V0 + (IV_V1 - IV_V0) * i / (IV_N - 1));
+  ivCache = PHY.sweep(phyParams(), Vas); ivKeyPrev = k;
+  return ivCache;
+}
+function injClass(r) { return r < 0.1 ? 0 : (r < 1 ? 1 : 2); }
+var INJ_STYLE = [[], [11, 7], [2.5, 6.5]];      /* solid / dashed / dotted */
+var INJ_NAME = ['저준위 주입 (실선)', '전이 (파선)', '고준위 주입 (점선)'];
+
+/* Va at which the injection ratio crosses a given level */
+function crossVa(pts, level) {
+  for (var i = 1; i < pts.length; i++) {
+    if (pts[i - 1].r < level && pts[i].r >= level) {
+      var a = pts[i - 1], b = pts[i];
+      if (!(a.r > 0)) return b.Va;
+      var f = (Math.log(level) - Math.log(a.r)) / (Math.log(b.r) - Math.log(a.r));
+      return a.Va + f * (b.Va - a.Va);
+    }
+  }
+  return null;
+}
+
+function drawIV() {
+  var cv = $('cvIV');
+  if (!cv.offsetParent && ONLY === 'profile') return;
+  var f = fitCanvas(cv), ctx = f.ctx, w = f.w, h = f.h;
+  var d = ivData(), pts = d.pts, b = d.base, isLog = (S.ivy === 'log');
+  var box = { l: 78, r: w - 16, t: 14, b: h - 50 };
+  if (box.r - box.l < 60 || box.b - box.t < 60) return;
+
+  /* ---- y range ---- */
+  var jmax = 0, jrevMax = 0, i, p;
+  for (i = 0; i < pts.length; i++) {
+    p = pts[i];
+    if (isFinite(p.J)) { if (p.J > jmax) jmax = p.J; if (-p.J > jrevMax) jrevMax = -p.J; }
+  }
+  var ya;
+  if (isLog) {
+    var hi = Math.pow(10, Math.ceil(Math.log10(Math.max(jmax, b.J0 * 10, 1e-30))));
+    var lo = Math.pow(10, Math.floor(Math.log10(Math.max(b.J0, 1e-30))) - 1);
+    if (hi / lo > 1e26) lo = hi / 1e26;
+    if (!(hi > lo)) { hi = 1; lo = 1e-12; }
+    ya = Ax(true, lo, hi, box.b, box.t);
+  } else {
+    var top = jmax > 0 ? jmax * 1.06 : 1;
+    ya = Ax(false, -0.05 * top, top, box.b, box.t);
+  }
+  var xa = Ax(false, IV_V0, IV_V1, box.l, box.r);
+
+  /* ---- injection region shading ---- */
+  var v01 = crossVa(pts, 0.1), v1 = crossVa(pts, 1.0);
+  if (v1 !== null) {
+    ctx.fillStyle = COL.hi;
+    ctx.fillRect(xa.t(v1), box.t, box.r - xa.t(v1), box.b - box.t);
+  }
+  if (v01 !== null) {
+    ctx.fillStyle = COL.tr;
+    ctx.fillRect(xa.t(v01), box.t, (v1 !== null ? xa.t(v1) : box.r) - xa.t(v01), box.b - box.t);
+  }
+
+  drawFrame(ctx, box, xa, ya, {
+    xlabel: '인가전압  Va  [V]',
+    ylabel: isLog ? '|J|  [A/cm²]' : 'J  [A/cm²]', xn: 7, yn: 7
+  });
+
+  /* J = 0 line in linear mode */
+  if (!isLog) {
+    ctx.strokeStyle = '#b9c3ce'; ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.moveTo(box.l, Math.round(ya.t(0)) + .5);
+    ctx.lineTo(box.r, Math.round(ya.t(0)) + .5); ctx.stroke();
+  }
+
+  /* ---- ideality slope guides (semi-log only) ---- */
+  if (isLog && S.ivslope) {
+    var dec1 = b.vt * Math.LN10, dec2 = 2 * dec1;          /* volts per decade */
+    var anchor = function (lev) {
+      var best = null;
+      for (i = 0; i < pts.length; i++) {
+        if (pts[i].Va <= 0 || !(pts[i].J > 0)) continue;
+        if (lev === null || pts[i].r <= lev) best = pts[i];
+      }
+      return best;
+    };
+    var a1 = anchor(0.01) || anchor(null), a2 = null;
+    if (v1 !== null) { for (i = 0; i < pts.length; i++) if (pts[i].Va >= v1 && pts[i].J > 0) { a2 = pts[i]; break; } }
+    if (!a2) a2 = anchor(null);
+    var drawGuide = function (a, decV, label, frac) {
+      if (!a || !(a.J > 0)) return;
+      /* keep the guide inside the visible decade window */
+      var vAt = function (J) { return a.Va + decV * Math.log10(J / a.J); };
+      var v0 = Math.max(IV_V0, vAt(ya.lo), a.Va - 0.20);
+      var v2 = Math.min(IV_V1, vAt(ya.hi), a.Va + 0.55);
+      if (!(v2 > v0)) return;
+      var seg = [], t;
+      for (t = 0; t <= 24; t++) {
+        var vv = v0 + (v2 - v0) * t / 24;
+        seg.push([vv, a.J * Math.pow(10, (vv - a.Va) / decV)]);
+      }
+      poly(ctx, box, xa, ya, seg, { c: COL.guide, w: 1.8, d: [7, 5] });
+      var yL = ya.lo * Math.pow(ya.hi / ya.lo, frac);
+      var vL = Math.min(v2, Math.max(v0, vAt(yL)));
+      ctx.font = 'bold ' + (FS - 1) + 'px Arial, Helvetica, sans-serif';
+      var tw = ctx.measureText(label).width;
+      var lx = Math.min(xa.t(vL) + 9, box.r - tw - 5);
+      var ly = ya.t(a.J * Math.pow(10, (vL - a.Va) / decV)) + 4;
+      ctx.textAlign = 'left';
+      ctx.fillStyle = 'rgba(255,255,255,.88)';          /* halo: keep the */
+      ctx.fillRect(lx - 4, ly - FS + 1, tw + 8, FS + 5); /* line off the text */
+      ctx.fillStyle = '#5b6c81';
+      ctx.fillText(label, lx, ly);
+    };
+    var mv1 = Math.round(dec1 * 1000 / 10) * 10, mv2 = Math.round(dec2 * 1000 / 10) * 10;
+    drawGuide(a1, dec1, 'n = 1  (' + mv1 + ' mV/dec)', 0.30);
+    drawGuide(a2, dec2, 'n = 2  (' + mv2 + ' mV/dec)', 0.62);
+  }
+
+  /* ---- Jn / Jp decomposition ---- */
+  if (S.ivdecomp) {
+    var sn = [], sp = [];
+    for (i = 0; i < pts.length; i++) {
+      sn.push([pts[i].Va, isLog ? Math.abs(pts[i].Jn) : pts[i].Jn]);
+      sp.push([pts[i].Va, isLog ? Math.abs(pts[i].Jp) : pts[i].Jp]);
+    }
+    poly(ctx, box, xa, ya, sn, { c: COL.elec, w: 2.5, d: [] });
+    poly(ctx, box, xa, ya, sp, { c: COL.hole, w: 2.5, d: [] });
+  }
+
+  /* ---- main curve, split by injection level and by sign ---- */
+  var run = [], cls = -1, sign = 0;
+  var flush = function () {
+    if (run.length > 1) poly(ctx, box, xa, ya, run,
+      { c: sign < 0 ? COL.rev : COL.tot, w: LW + 0.4, d: INJ_STYLE[Math.max(cls, 0)] });
+    run = [];
+  };
+  for (i = 0; i < pts.length; i++) {
+    p = pts[i];
+    var c = injClass(p.r), sg = p.J < 0 ? -1 : 1;
+    var y = isLog ? Math.abs(p.J) : p.J;
+    if (isLog && !(y > 0)) { flush(); cls = c; sign = sg; continue; }
+    if (c !== cls || sg !== sign) {
+      if (run.length) { run.push([p.Va, y]); flush(); }
+      cls = c; sign = sg;
+    }
+    run.push([p.Va, y]);
+  }
+  flush();
+
+  /* ---- injection boundary markers ---- */
+  var vline = function (v, txt, col) {
+    if (v === null) return;
+    var px = Math.round(xa.t(v)) + .5;
+    ctx.save();
+    ctx.strokeStyle = col; ctx.lineWidth = 1.6; ctx.setLineDash([5, 4]);
+    ctx.beginPath(); ctx.moveTo(px, box.t); ctx.lineTo(px, box.b); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.translate(px - 5, box.b - 8); ctx.rotate(-Math.PI / 2);
+    ctx.font = 'bold ' + (FS - 2) + 'px Arial, Helvetica, sans-serif';
+    ctx.fillStyle = col; ctx.textAlign = 'left';
+    ctx.fillText(txt + '  ' + v.toFixed(3) + ' V', 0, 0);
+    ctx.restore();
+  };
+  vline(v01, 'r = 0.1', '#a5811a');
+  vline(v1, 'r = 1', '#b1352c');
+  if (v1 !== null) {
+    var bw = box.r - xa.t(v1);
+    ctx.fillStyle = '#a33';
+    ctx.font = 'bold ' + (FS - 1) + 'px Arial, Helvetica, sans-serif';
+    if (bw > 210) {
+      ctx.textAlign = 'center';
+      ctx.fillText('저준위 주입 가정 위배 (high injection)', (xa.t(v1) + box.r) / 2, box.t + FS + 2);
+    }
+  }
+
+  /* ---- current operating point ---- */
+  if (MODEL) {
+    var yv = isLog ? Math.abs(MODEL.J) : MODEL.J;
+    var px2 = xa.t(S.Va);
+    var py2 = (isLog && !(yv > 0)) ? box.b : Math.max(box.t + 2, Math.min(box.b - 2, ya.t(yv)));
+    ctx.save();
+    ctx.beginPath(); ctx.rect(box.l, box.t, box.r - box.l, box.b - box.t); ctx.clip();
+    dot(ctx, px2, py2, 8, MODEL.J < 0 ? COL.rev : '#c8102e');
+    ctx.restore();
+  }
+
+  /* ---- legend ---- */
+  var items = [{ c: COL.tot, t: 'J · 저준위 주입', d: INJ_STYLE[0] }];
+  if (v01 !== null) items.push({ c: COL.tot, t: 'J · 전이 (r ≥ 0.1)', d: INJ_STYLE[1] });
+  if (v1 !== null) items.push({ c: COL.tot, t: 'J · 고준위 주입 (r ≥ 1)', d: INJ_STYLE[2] });
+  if (isLog) items.push({ c: COL.rev, t: '역방향 |J| (J < 0)' });
+  if (S.ivdecomp) {
+    items.push({ c: COL.elec, w: 2.5, t: 'Jn · p측 전자 주입' });
+    items.push({ c: COL.hole, w: 2.5, t: 'Jp · n측 정공 주입' });
+  }
+  if (isLog && S.ivslope) items.push({ c: COL.guide, w: 1.8, d: [7, 5], t: 'n = 1 / n = 2 기울기' });
+  legend(ctx, box.l + 10, box.t + 8, items);
+}
+
+/* click / drag on the J-V plot moves Va (mouse-only operation) */
+function initIVMouse() {
+  var cv = $('cvIV'), down = false;
+  var set = function (ev) {
+    var r = cv.getBoundingClientRect(), w = r.width;
+    var box = { l: 78, r: w - 16 };
+    var fr = (ev.clientX - r.left - box.l) / Math.max(1, box.r - box.l);
+    var v = IV_V0 + (IV_V1 - IV_V0) * Math.min(1, Math.max(0, fr));
+    v = Math.round(v / 0.005) * 0.005;
+    if (v === S.Va) return;
+    S.Va = parseFloat(v.toFixed(3)); showVal('Va'); pushURL(); recompute();
+  };
+  cv.style.cursor = 'ew-resize';
+  cv.addEventListener('mousedown', function (e) { down = true; set(e); e.preventDefault(); });
+  window.addEventListener('mousemove', function (e) { if (down) set(e); });
+  window.addEventListener('mouseup', function () { down = false; });
+}
+
+/* ---- redraw scheduler ---- */
+var rafPending = false;
+function drawAll() {
+  if (rafPending) return;
+  rafPending = true;
+  requestAnimationFrame(function () {
+    rafPending = false;
+    try { if (typeof drawProfile === 'function') drawProfile(); } catch (e) { console.error(e); }
+    try { drawIV(); } catch (e) { console.error(e); }
   });
 }
 
@@ -1227,6 +1684,7 @@ function boot() {
   }
 
   syncControls();
+  initIVMouse();
   recompute();
   if (q.test === '1') $('btnTest').click();
 
