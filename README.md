@@ -9,7 +9,7 @@
 | 버전 | 주소 | 쓰는 곳 |
 |---|---|---|
 | 기본 | https://choo1596.github.io/PN-diode/ | 강의실·프로젝터. 진한 대비, 굵은 선 |
-| Apple 스타일 | https://choo1596.github.io/PN-diode/apple.html | 큰 화면에서 보기 좋게. 라이트/다크 |
+| Apple 스타일 (**영문**) | https://choo1596.github.io/PN-diode/apple.html | 큰 화면에서 보기 좋게. 라이트/다크, UI 전체 영어 |
 | 소형 (4:3) | https://choo1596.github.io/PN-diode/compact.html | **PowerPoint 삽입용.** 작아져도 안 깨짐 |
 
 `compact.html` 은 4:3 슬라이드에 넣는 용도입니다. 세로로 쌓는 배치라 그래프가 폭을
@@ -128,6 +128,8 @@ LICENSE
 ```
 
 세 버전 모두 **물리 엔진과 UI 로직이 같은 코드**이고 스킨만 다릅니다.
+화면 문구는 문자열 테이블(`STR`)로 분리되어 있어 빌드마다 언어를 갈아끼웁니다 —
+기본·소형 버전은 한국어, Apple 버전은 영어입니다.
 
 ### PowerPoint 에 넣기
 

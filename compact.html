@@ -233,6 +233,42 @@ table.ro td.v{text-align:right;font-weight:590;white-space:nowrap;font-variant-n
 </div>
 <script>
 "use strict";
+
+/* ==========================================================================
+   STRINGS - Korean by default.  A build may override any key before the rest
+   of the script runs (see the English table in the Apple build).
+   ========================================================================== */
+var STR = {
+  /* slider descriptions */
+  dsVa: '인가전압', dsWp: 'p 중성영역', dsWn: 'n 중성영역',
+  dsLn: 'p측 전자', dsLp: 'n측 정공', dsNa: 'p측 억셉터', dsNd: 'n측 도너',
+  stepDown: '한 단계 내리기', stepUp: '한 단계 올리기',
+  /* readout */
+  rowScrW: 'SCR 폭 W',
+  /* note strip */
+  noteVbi: '<b>V<sub>a</sub> ≥ V<sub>bi</sub></b> 공핍 근사가 성립하지 않는 영역입니다.',
+  noteInjA: '<b>저준위 주입 밖</b> δ(0)/N = ',
+  noteInjB: '. 이 시뮬레이터는 저준위 주입만 다루므로 V<sub>a</sub>를 낮추거나 도핑을 올리세요.',
+  /* canvas */
+  axVa: '인가전압  V_a  [V]',
+  ivAuto: 'y축은 현재 동작점에 맞춰 자동 확대',
+  offScale: '  (축척 밖)',
+  wElec: '전자', wHole: '정공',
+  noRecomb: '중성영역 재결합 거의 없음 → J_n, J_p 각각 일정',
+  /* link button / self test overlay */
+  copied: '복사됨 ✓', copyFail: '복사 실패', copyPrompt: '아래 주소를 복사하세요',
+  testClose: '\n\n(클릭하면 닫힙니다)',
+  /* self test */
+  tHdr: '=== pn diode (저준위 주입 이상 모델) 자체 검증 ===',
+  t1: '1  Va = 0  ->  과잉 캐리어와 전류가 정확히 0',
+  t2: '2  역방향 포화  ->  J = −J_s  (그림 2)',
+  t3: ')  ->  지수 감쇠, J_n = eD_n·n_p0(e^{V/Vt}−1)/L_n,  λ = L_n  (그림 5, 9)',
+  t4: ')  ->  직선, J_n = eD_n·n_p0(e^{V/Vt}−1)/W_p,  λ = W_p  (그림 4, 9)',
+  t5: '5  J_n(x) + J_p(x) = J_Total 이 위치에 무관하게 성립  (그림 3)',
+  t6: '6  J = J_s·(e^{eV_a/kT} − 1) 를 정확히 따름  (그림 2)',
+  tShapeDev: '형상 최대편차 ',
+  tMaxRel: '  최대 상대편차 '
+};
 /* ==========================================================================
    PHYSICS  -  ideal pn diode, LOW LEVEL INJECTION ONLY
    --------------------------------------------------------------------------
@@ -372,7 +408,7 @@ function runSelfTests(verbose) {
   /* 1 */
   (function () {
     var m = PHY.model(P({ Va: 0 }));
-    chk('1  Va = 0  ->  과잉 캐리어와 전류가 정확히 0',
+    chk(STR.t1,
         m.dnp0 === 0 && m.dpn0 === 0 && m.J === 0,
         'dnp0=' + e(m.dnp0) + '  dpn0=' + e(m.dpn0) + '  J=' + e(m.J));
   })();
@@ -380,7 +416,7 @@ function runSelfTests(verbose) {
   /* 2 */
   (function () {
     var m = PHY.model(P({ Va: -0.5 }));
-    chk('2  역방향 포화  ->  J = −J_s  (그림 2)', rel(m.J, -m.Js) < 1e-6,
+    chk(STR.t2, rel(m.J, -m.Js) < 1e-6,
         'J=' + e(m.J) + '   −J_s=' + e(-m.Js) + '   n_p(0)/n_p0=' + e(m.npE / m.np0, 2));
   })();
 
@@ -393,9 +429,9 @@ function runSelfTests(verbose) {
       worst = Math.max(worst, Math.abs(PHY.shape(x, m.Wp, m.Ln) - Math.exp(-x / m.Ln)));
     }
     var Jideal = Q * DN * m.np0 * (Math.exp(m.Va / VT) - 1) / m.Ln;
-    chk('3  Long base (W_p/L_n = ' + m.uP.toFixed(0) + ')  ->  지수 감쇠, J_n = eD_n·n_p0(e^{V/Vt}−1)/L_n,  λ = L_n  (그림 5, 9)',
+    chk('3  Long base (W_p/L_n = ' + m.uP.toFixed(0) + STR.t3,
         worst < 0.01 && rel(m.Jn, Jideal) < 0.01 && rel(m.lamP, m.Ln) < 0.01,
-        '형상 최대편차 ' + e(worst, 2) + ' · J_n=' + e(m.Jn) + ' vs ' + e(Jideal) +
+        STR.tShapeDev + e(worst, 2) + ' · J_n=' + e(m.Jn) + ' vs ' + e(Jideal) +
         ' · λ=' + e(m.lamP * 1e4, 3) + ' µm, L_n=' + e(m.Ln * 1e4, 3) + ' µm');
   })();
 
@@ -408,9 +444,9 @@ function runSelfTests(verbose) {
       worst = Math.max(worst, Math.abs(PHY.shape(x, m.Wp, m.Ln) - (1 - x / m.Wp)));
     }
     var Jideal = Q * DN * m.np0 * (Math.exp(m.Va / VT) - 1) / m.Wp;
-    chk('4  Short base (W_p/L_n = ' + m.uP.toFixed(3) + ')  ->  직선, J_n = eD_n·n_p0(e^{V/Vt}−1)/W_p,  λ = W_p  (그림 4, 9)',
+    chk('4  Short base (W_p/L_n = ' + m.uP.toFixed(3) + STR.t4,
         worst < 0.01 && rel(m.Jn, Jideal) < 0.01 && rel(m.lamP, m.Wp) < 0.01,
-        '형상 최대편차 ' + e(worst, 2) + ' · J_n=' + e(m.Jn) + ' vs ' + e(Jideal) +
+        STR.tShapeDev + e(worst, 2) + ' · J_n=' + e(m.Jn) + ' vs ' + e(Jideal) +
         ' · λ=' + e(m.lamP * 1e4, 3) + ' µm, W_p=' + e(m.Wp * 1e4, 3) + ' µm');
   })();
 
@@ -423,10 +459,10 @@ function runSelfTests(verbose) {
       worst = Math.max(worst, rel(jn + (m.J - jn), m.J));
     }
     var edgeP = PHY.JnAt(m, 0), edgeN = PHY.JpAt(m, 0);
-    chk('5  J_n(x) + J_p(x) = J_Total 이 위치에 무관하게 성립  (그림 3)',
+    chk(STR.t5,
         worst < 1e-12 && rel(edgeP, m.Jn) < 1e-12 && rel(edgeN, m.Jp) < 1e-12,
         'J_Total=' + e(m.J) + '  J_n(−x_p)=' + e(m.Jn) + '  J_p(x_n)=' + e(m.Jp) +
-        '  최대 상대편차 ' + e(worst, 1));
+        STR.tMaxRel + e(worst, 1));
   })();
 
   /* 6  ideal diode equation */
@@ -438,10 +474,10 @@ function runSelfTests(verbose) {
       if (rel(m.J, want) > 1e-12) ok = false;
       rows.push('Va=' + v.toFixed(1) + '  J=' + e(m.J) + '  J_s(e^{V/Vt}−1)=' + e(want));
     }
-    chk('6  J = J_s·(e^{eV_a/kT} − 1) 를 정확히 따름  (그림 2)', ok, rows.join('\n        '));
+    chk(STR.t6, ok, rows.join('\n        '));
   })();
 
-  var text = ['=== pn diode (저준위 주입 이상 모델) 자체 검증 ==='].concat(log)
+  var text = [STR.tHdr].concat(log)
              .concat(['=== ' + nPass + ' passed, ' + nFail + ' failed ===']).join('\n');
   if (verbose !== false && typeof console !== 'undefined') console.log(text);
   return { pass: nPass, fail: nFail, text: text };
@@ -554,13 +590,13 @@ function pushURL() { try { history.replaceState(null, '', buildURL()); } catch (
 /* ---------------- sliders ---------------- */
 var PPD = 200;                              /* range positions per decade */
 var SLDEF = {
-  Va: { nm: 'V_a', ds: '인가전압', min: -1, max: 0.8, step: 0.005, fmt: 'v', u: 'V' },
-  Wp: { nm: 'W_p', ds: 'p 중성영역', min: 0.1, max: 500, log: 1, u: 'µm' },
-  Wn: { nm: 'W_n', ds: 'n 중성영역', min: 0.1, max: 500, log: 1, u: 'µm' },
-  Ln: { nm: 'L_n', ds: 'p측 전자', min: 0.1, max: 500, log: 1, u: 'µm' },
-  Lp: { nm: 'L_p', ds: 'n측 정공', min: 0.1, max: 500, log: 1, u: 'µm' },
-  Na: { nm: 'N_a', ds: 'p측 억셉터', min: 1e14, max: 1e19, log: 1, fmt: 'e', u: 'cm⁻³' },
-  Nd: { nm: 'N_d', ds: 'n측 도너', min: 1e14, max: 1e19, log: 1, fmt: 'e', u: 'cm⁻³' }
+  Va: { nm: 'V_a', ds: STR.dsVa, min: -1, max: 0.8, step: 0.005, fmt: 'v', u: 'V' },
+  Wp: { nm: 'W_p', ds: STR.dsWp, min: 0.1, max: 500, log: 1, u: 'µm' },
+  Wn: { nm: 'W_n', ds: STR.dsWn, min: 0.1, max: 500, log: 1, u: 'µm' },
+  Ln: { nm: 'L_n', ds: STR.dsLn, min: 0.1, max: 500, log: 1, u: 'µm' },
+  Lp: { nm: 'L_p', ds: STR.dsLp, min: 0.1, max: 500, log: 1, u: 'µm' },
+  Na: { nm: 'N_a', ds: STR.dsNa, min: 1e14, max: 1e19, log: 1, fmt: 'e', u: 'cm⁻³' },
+  Nd: { nm: 'N_d', ds: STR.dsNd, min: 1e14, max: 1e19, log: 1, fmt: 'e', u: 'cm⁻³' }
 };
 var SL = {};
 function slFmt(k, v) {
@@ -591,7 +627,7 @@ function mkSlider(host, key) {
   inp.type = 'range';
   if (d.log) { inp.min = 0; inp.max = Math.round(Math.log10(d.max / d.min) * PPD); inp.step = 1; }
   else { inp.min = d.min; inp.max = d.max; inp.step = d.step; }
-  bm.title = '한 단계 내리기'; bp.title = '한 단계 올리기';
+  bm.title = STR.stepDown; bp.title = STR.stepUp;
   row.appendChild(bm); row.appendChild(inp); row.appendChild(bp);
   w.appendChild(lab); w.appendChild(row); host.appendChild(w);
   SL[key] = { input: inp, valEl: lab.querySelector('.val'), unit: d.u };
@@ -643,7 +679,7 @@ var ROWS = [
   { k: 'J<sub>Total</sub>', f: function (m) { return fmtE(m.J) + ' A/cm<sup>2</sup>'; } },
   { k: 'J<sub>s</sub>', f: function (m) { return fmtE(m.Js) + ' A/cm<sup>2</sup>'; } },
   { k: 'V<sub>bi</sub>', f: function (m) { return m.Vbi.toFixed(3) + ' V'; } },
-  { k: 'SCR 폭 W', f: function (m) { return fmtLen(m.W); } },
+  { k: STR.rowScrW, f: function (m) { return fmtLen(m.W); } },
   { k: 'D<sub>n</sub>, D<sub>p</sub>', f: function () { return PHY.DN + ', ' + PHY.DP + ' cm<sup>2</sup>/s'; } },
   { k: 'τ<sub>n</sub>, τ<sub>p</sub>', f: function (m) {
       var tn = m.Ln * m.Ln / PHY.DN, tp = m.Lp * m.Lp / PHY.DP;
@@ -668,10 +704,9 @@ function updateReadout(m) {
 function updateNote(m) {
   var out = [];
   if (m.vbiClamped)
-    out.push('<b>V<sub>a</sub> ≥ V<sub>bi</sub></b> 공핍 근사가 성립하지 않는 영역입니다.');
+    out.push(STR.noteVbi);
   else if (m.inj > 0.1)
-    out.push('<b>저준위 주입 밖</b> δ(0)/N = ' + fmtG(m.inj, 2) +
-             '. 이 시뮬레이터는 저준위 주입만 다루므로 V<sub>a</sub>를 낮추거나 도핑을 올리세요.');
+    out.push(STR.noteInjA + fmtG(m.inj, 2) + STR.noteInjB);
   $('note').innerHTML = out.length ? '<div class="n">' + out[0] + '</div>' : '';
 }
 
@@ -995,7 +1030,7 @@ function drawIV() {
   var ya = Ax(false, lo, hi, box.b, box.t);
 
   drawFrame(ctx, box, xa, ya, {
-    xlabel: T > 0 ? '인가전압  V_a  [V]' : '', ylabel: T > 1 ? 'J  [A/cm²]' : '',
+    xlabel: T > 0 ? STR.axVa : '', ylabel: T > 1 ? 'J  [A/cm²]' : '',
     xn: T > 0 ? 5 : 4, yn: T > 1 ? 5 : 3
   });
 
@@ -1036,7 +1071,7 @@ function drawIV() {
   if (T > 1) {
     drawSub(ctx, 'J = J_s·(e^{eVa/kT} − 1)', box.l + 8, box.t + FS + 6,
             { align: 'left', size: FS + 2, bold: 1, col: COL.ivCurve, halo: 0.9 });
-    drawSub(ctx, 'y축은 현재 동작점에 맞춰 자동 확대', box.l + 8, box.t + FS * 2.5 + 4,
+    drawSub(ctx, STR.ivAuto, box.l + 8, box.t + FS * 2.5 + 4,
             { align: 'left', size: FS - 3, col: COL.dim2, halo: 0.9 });
   }
   if (T > 0) {
@@ -1206,8 +1241,8 @@ function drawProfilePanel(ctx, m, X, top, bot) {
   if (T > 0) {
   dashLine(ctx, X.l, hiIsNa ? yHi : yLo, X.cxL, hiIsNa ? yHi : yLo, COL.hole, [6, 4], 1.8);
   dashLine(ctx, X.cxR, hiIsNa ? yLo : yHi, X.r, hiIsNa ? yLo : yHi, COL.elec, [6, 4], 1.8);
-  var mjP = T > 1 ? ('p_{p0} = ' + fmtEc(m.Na, 1) + '  (축척 밖)') : 'p_{p0}';
-  var mjN = T > 1 ? ('n_{n0} = ' + fmtEc(m.Nd, 1) + '  (축척 밖)') : 'n_{n0}';
+  var mjP = T > 1 ? ('p_{p0} = ' + fmtEc(m.Na, 1) + STR.offScale) : 'p_{p0}';
+  var mjN = T > 1 ? ('n_{n0} = ' + fmtEc(m.Nd, 1) + STR.offScale) : 'n_{n0}';
   haloText(ctx, mjP, X.l + 6, (hiIsNa ? yHi : yLo) - 4, COL.hole, 'left', FS - 3, true);
   haloText(ctx, mjN, X.r - 6, (hiIsNa ? yLo : yHi) - 4, COL.elec, 'right', FS - 3, true);
   ctx.save();                                   /* axis break */
@@ -1276,8 +1311,8 @@ function drawProfilePanel(ctx, m, X, top, bot) {
     arrowLine(ctx, xe + (fwd ? d : -d), ay, xe + (fwd ? -d : d), ay, COL.elec, 2.2);
     arrowLine(ctx, xh + (fwd ? -d : d), ay, xh + (fwd ? d : -d), ay, COL.hole, 2.2);
     if (T > 1) {
-      haloText(ctx, '전자', xe, ay - 10, COL.elec, 'center', FS - 2, true);
-      haloText(ctx, '정공', xh, ay - 10, COL.hole, 'center', FS - 2, true);
+      haloText(ctx, STR.wElec, xe, ay - 10, COL.elec, 'center', FS - 2, true);
+      haloText(ctx, STR.wHole, xh, ay - 10, COL.hole, 'center', FS - 2, true);
     }
   }
 
@@ -1371,7 +1406,7 @@ function drawCurrentPanel(ctx, m, X, top, bot) {
     haloText(ctx, 'J_n = J_{Total} − J_p', X.n(xln), y(m.J - jpn) + oComp, COL.elec, 'center', FS - 3);
   }
   if (T > 0 && m.uP < 0.35 && m.uN < 0.35)
-    haloText(ctx, '중성영역 재결합 거의 없음 → J_n, J_p 각각 일정',
+    haloText(ctx, STR.noRecomb,
              (X.l + X.r) / 2, top + FS * 2.4, COL.muted, 'center', FS - 2, true);
   drawSub(ctx, 'p', X.l + 10, top + FS, { align: 'left', size: FS, bold: 1, col: COL.scrLab });
   drawSub(ctx, 'n', X.r - 10, top + FS, { align: 'right', size: FS, bold: 1, col: COL.scrLab });
@@ -1422,7 +1457,7 @@ function recompute() {
 function copyLink() {
   var url = buildURL(), b = $('btnLink'), old = b.textContent;
   var done = function (ok) {
-    b.textContent = ok ? '복사됨 ✓' : '복사 실패';
+    b.textContent = ok ? STR.copied : STR.copyFail;
     setTimeout(function () { b.textContent = old; }, 1500);
   };
   try {
@@ -1434,8 +1469,8 @@ function copyLink() {
     if (ok) { done(true); return; }
   } catch (e) {}
   if (navigator.clipboard) navigator.clipboard.writeText(url).then(
-    function () { done(true); }, function () { window.prompt('아래 주소를 복사하세요', url); });
-  else window.prompt('아래 주소를 복사하세요', url);
+    function () { done(true); }, function () { window.prompt(STR.copyPrompt, url); });
+  else window.prompt(STR.copyPrompt, url);
 }
 
 function boot() {
@@ -1465,7 +1500,7 @@ function boot() {
 
   if (q.test === '1') {
     var p = $('selftest');
-    p.textContent = runSelfTests(false).text + '\n\n(클릭하면 닫힙니다)';
+    p.textContent = runSelfTests(false).text + STR.testClose;
     p.classList.add('show');
     p.addEventListener('click', function () { p.classList.remove('show'); });
   }
